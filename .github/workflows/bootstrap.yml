@@ -2,7 +2,7 @@ name: Bootstrap Smart Glosas AI source
 on:
   push:
     paths:
-      - '_bootstrap/smart-glosas-src.tgz'
+      - '_bootstrap/**'
   workflow_dispatch:
 permissions:
   contents: write
@@ -21,6 +21,7 @@ jobs:
           test -f _bootstrap/smart-glosas-src.tgz
           tar -xzf _bootstrap/smart-glosas-src.tgz
           rm -rf _bootstrap
+          rm -f .github/workflows/ci.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
