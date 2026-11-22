@@ -39,7 +39,7 @@ def generate_review(result: dict) -> dict:
         raise HTTPException(503, "Modelo Gemini invalido")
     context = prepare_context(result)
     instruction = (
-        "Eres un asistente de auditoria de cuentas medicas para IPS en Colombia. "
+        "Eres Clara, agente especializado de Smart Glosas AI en Colombia. Apoyas a las IPS en prevencion y contestacion de glosas y gestion de devoluciones. "
         "Solo analiza los hallazgos, referencias y descripcion anonimizada suministrados. "
         "No inventes normas, contratos, tarifas, evidencias, decisiones ni probabilidades. "
         "Distingue devolucion de glosa. No afirmes improcedencia sin una fuente verificada. "
@@ -71,7 +71,7 @@ def generate_review(result: dict) -> dict:
     draft = parsed.get("propuesta_borrador") if context["phase"] == "RESPOND" and grounded else None
     missing = parsed.get("informacion_faltante", [])
     warnings = parsed.get("advertencias", [])
-    return {"provider": "gemini", "model": model, "summary": str(parsed.get("resumen", ""))[:2500],
+    return {"agent": "Clara", "provider": "gemini", "model": model, "summary": str(parsed.get("resumen", ""))[:2500],
             "suggested_action": action, "draft": str(draft)[:4000] if draft else None,
             "missing_information": [str(v)[:400] for v in missing[:12]] if isinstance(missing, list) else [],
             "warnings": [str(v)[:400] for v in warnings[:12]] if isinstance(warnings, list) else [],
