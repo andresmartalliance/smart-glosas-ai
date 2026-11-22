@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:smart:glosas:contract-context:v1",
+  "title": "Smart contract intelligence context v1",
+  "description": "Optional contract and technical-note intelligence from MAIRA. No direct database access or actual cross-product connector exists in v0.1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "agreement_ref", "source_ref", "verified_at"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "agreement_ref": {"type": "string"},
+    "payer": {"type": ["string", "null"]},
+    "modality": {"type": ["string", "null"]},
+    "effective_from": {"type": ["string", "null"], "format": "date"},
+    "effective_until": {"type": ["string", "null"], "format": "date"},
+    "tariff_context": {"type": "object"},
+    "technical_note_context": {"type": "object"},
+    "source_ref": {"type": "string"},
+    "verified_at": {"type": "string", "format": "date-time"}
+  }
+}

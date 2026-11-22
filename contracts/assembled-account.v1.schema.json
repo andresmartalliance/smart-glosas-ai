@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:smart:glosas:assembled-account:v1",
+  "title": "Smart assembled account event v1",
+  "description": "Versionable contract for Armando -> Glosas AI. Tenant identity comes from authenticated integration, never from an untrusted event field.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "account_ref", "origin_system", "facts"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "event_id": {"type": "string", "minLength": 1},
+    "origin_system": {"type": "string", "minLength": 1},
+    "account_ref": {"type": "string", "minLength": 1},
+    "payer": {"type": ["string", "null"]},
+    "modality": {"type": ["string", "null"]},
+    "service_type": {"type": ["string", "null"]},
+    "issued_on": {"type": ["string", "null"], "format": "date"},
+    "facts": {"type": "object"},
+    "evidence": {"type": "array", "items": {"type": "object", "required": ["id", "kind"], "properties": {"id": {"type": "string"}, "kind": {"type": "string"}, "reference": {"type": "string"}}}}
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:smart:glosas:analysis:v1",
+  "title": "Smart Glosas AI analysis result v1",
+  "description": "A diagnostic result, not an autonomous legal decision or a calibrated statistical prediction.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "analysis_id", "account_ref", "phase", "summary", "human_review_required"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "analysis_id": {"type": "string"},
+    "account_ref": {"type": "string"},
+    "phase": {"enum": ["PREVENT", "RESPOND"]},
+    "summary": {"enum": ["REVIEW_REQUIRED", "INSUFFICIENT_EVIDENCE", "NO_RULES", "NO_ALERTS_DETECTED"]},
+    "findings": {"type": "array", "items": {"type": "object"}},
+    "human_review_required": {"const": true},
+    "statistical_probability": {"type": "null"}
+  }
+}
