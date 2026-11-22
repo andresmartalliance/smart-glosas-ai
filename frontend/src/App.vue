@@ -92,6 +92,9 @@ async function attachHostContext(token:string){
 }
 function message(e:unknown){return e instanceof Error?e.message:'No fue posible completar la operación'}
 onMounted(async()=>{
+  // Direct standalone access opens the complete product navigation in a
+  // safe, read-only state. Live operations still require signed Smart context.
+  if(previewAvailable && window.parent===window)preview.value=true
   try{
     const c=await fetch(API+'/api/v1/config').then(r=>r.json()) as {gemini_available:boolean}
     geminiAvailable.value=Boolean(c.gemini_available)
