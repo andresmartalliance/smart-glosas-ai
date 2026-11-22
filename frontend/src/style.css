@@ -27,3 +27,30 @@
 .upload-disabled{opacity:.5;cursor:not-allowed}
 .hero-icon{letter-spacing:0}.hero-icon span{font-size:70px;color:#ffffff29;letter-spacing:-3px}
 @media(max-width:720px){.auth-card{padding:32px 26px}.auth-card h1{font-size:28px}.access-capabilities{margin:24px 0}}
+
+
+/* Local, synthetic-only import inspection. Reuses the real IPS product layout. */
+.synthetic-results{border-top:1px solid #e9eef4;margin-top:22px;padding-top:20px;display:grid;gap:15px}
+.synthetic-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.synthetic-head strong{font-size:13px;color:#203952}
+.synthetic-head small{font-size:11px;color:#8598ad;word-break:break-all}
+.synthetic-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.synthetic-metrics>div{background:#f4f8fd;padding:11px 7px;border-radius:9px;text-align:center;display:grid;gap:3px}
+.synthetic-metrics strong{font-size:19px;color:#174e94;font-variant-numeric:tabular-nums}
+.synthetic-metrics span{font-size:10px;color:#6d8299}
+.synthetic-amount{font-size:11px;color:#70849a;display:flex;justify-content:space-between;gap:9px;align-items:center}
+.synthetic-amount strong{font-size:16px;color:#213b57;white-space:nowrap}
+.synthetic-table-wrap{overflow:auto;max-height:410px;border:1px solid #e6edf5;border-radius:10px}
+.synthetic-table{border-collapse:collapse;width:100%;font-size:11px;min-width:430px}
+.synthetic-table th{position:sticky;top:0;background:#f4f7fb;color:#70839a;text-align:left;font-size:10px;padding:12px 10px;z-index:1}
+.synthetic-table td{border-top:1px solid #edf1f5;padding:9px 10px;color:#37516c;white-space:nowrap}
+.synthetic-table tr.selected{background:#eaf3fe}
+.synthetic-table tbody tr:hover{background:#f4f8fe;cursor:pointer}
+.synthetic-table .text-button{font-size:11px}
+.synthetic-detail{background:#f9fbfe;border:1px solid #e5edf5;border-radius:11px;padding:16px;display:grid;gap:9px}
+.synthetic-detail .panel-heading{margin:0}
+.synthetic-detail p{color:#3a536e;font-size:12px;line-height:1.65}
+.synthetic-detail>div:not(.panel-heading):not(.helper-note){font-size:11px;color:#637990}
+.synthetic-detail .helper-note{margin-top:5px}
+.synthetic-footer{font-size:10px}
+@media(max-width:720px){.synthetic-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.synthetic-amount{display:block}.synthetic-amount strong{display:block;margin-top:4px}}
