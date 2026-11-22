@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed, onMounted, ref} from 'vue'
 import {inspectSyntheticFile, type SyntheticImportResult, type SyntheticObjection} from './syntheticImport'
+import {prepareSyntheticReview, reviewCsv} from './syntheticReview'
 
 type View = 'resumen'|'prevent'|'respond'|'reglas'|'historial'
 type Institute={id:string;name:string;roles:string[]}
@@ -56,6 +57,30 @@ const respondEvidence=ref('')
 const upload=ref<File|null>(null)
 const syntheticImport=ref<SyntheticImportResult|null>(null)
 const selectedSynthetic=ref<SyntheticObjection|null>(null)
+const syntheticReviewed=ref(false)
+const syntheticEdits=ref<Record<string,string>>({})
+const selectedReview=computed(()=>selectedSynthetic.value&&syntheticReviewed.value?prepareSyntheticReview(selectedSynthetic.value):null)
+const priorityCount=computed(()=>syntheticReviewed.value&&syntheticImport.value?syntheticImport.value.items.filter(x=>prepareSyntheticReview(x).priority==='ALTA').length:0)
+function analyzeSyntheticBatch(){
+  if(!preview.value||!syntheticImport.value)return
+  syntheticEdits.value=Object.fromEntries(syntheticImport.value.items.map(item=>[item.ref,prepareSyntheticReview(item).draft]))
+  syntheticReviewed.value=true
+  notification.value='Revisión preliminar preparada. Abre las objeciones y verifica los soportes antes de decidir.'
+}
+function exportSyntheticBatch(){
+  if(!preview.value||!syntheticImport.value||!syntheticReviewed.value)return
+  const csv=reviewCsv(syntheticImport.value.items,syntheticEdits.value)
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'})
+  const url=URL.createObjectURL(blob)
+  const anchor=document.createElement('a')
+  anchor.href=url
+  anchor.download='Smart_Glosas_Revision_Preliminar_Sintetica.csv'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+  notification.value='Revisión preliminar exportada para validación humana. No se ha enviado nada a una EPS.'
+}
 const formatCOP=(value:number)=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(value)
 const fileColumns=ref<string[]>([])
 const mapping=ref<Record<string,string>>({})
@@ -165,7 +190,7 @@ function importTargetFields(phase:'PREVENT'|'RESPOND'){
 function selectFile(event:Event,phase:'PREVENT'|'RESPOND'){
   upload.value=(event.target as HTMLInputElement).files?.[0]||null
   importPhase.value=phase;fileColumns.value=[];mapping.value={};importErrors.value=[];importCount.value=0
-  syntheticImport.value=null;selectedSynthetic.value=null;error.value='';notification.value=''
+  syntheticImport.value=null;selectedSynthetic.value=null;syntheticReviewed.value=false;syntheticEdits.value={};error.value='';notification.value=''
   if(preview.value&&phase==='RESPOND'&&upload.value)void inspectFile()
 }
 async function inspectFile(){
@@ -178,6 +203,7 @@ async function inspectFile(){
       const parsed=await inspectSyntheticFile(upload.value)
       syntheticImport.value=parsed
       selectedSynthetic.value=parsed.items[0]||null
+      syntheticReviewed.value=false;syntheticEdits.value={}
       notification.value='Archivo leído en este navegador. No se ha enviado ni guardado información.'
       return
     }
@@ -375,6 +401,13 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
                     <div><strong>{{syntheticImport.distinctAccounts}}</strong><span>Cuentas</span></div>
                   </div>
                   <div class="synthetic-amount">Valor objetado en el archivo <strong>{{formatCOP(syntheticImport.totalAmount)}}</strong></div>
+                  <div class="synthetic-actions">
+                    <button class="primary" v-if="!syntheticReviewed" @click="analyzeSyntheticBatch">Revisar las {{syntheticImport.items.length}} objeciones sin IA</button>
+                    <template v-else>
+                      <span class="review-status">Revisión preliminar · {{priorityCount}} casos prioritarios</span>
+                      <button class="secondary" @click="exportSyntheticBatch">Exportar borradores para revisión</button>
+                    </template>
+                  </div>
                   <p v-if="syntheticImport.errors.length" class="alert">{{syntheticImport.errors.length}} filas necesitan revisión.</p>
                   <div class="synthetic-table-wrap"><table class="synthetic-table"><thead><tr><th>Referencia</th><th>Tipo</th><th>Causal</th><th>Valor</th></tr></thead><tbody>
                     <tr v-for="item in syntheticImport.items" :key="item.ref" :class="{selected:selectedSynthetic?.ref===item.ref}" @click="selectedSynthetic=item">
@@ -386,9 +419,23 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
                     <div><strong>Cuenta:</strong> {{selectedSynthetic.account}}</div>
                     <div><strong>EPS:</strong> {{selectedSynthetic.payer||'No informada'}}</div>
                     <div><strong>Soporte:</strong> {{selectedSynthetic.support}}</div>
-                    <div class="helper-note">Pendiente de evaluación normativa y documental. El reconocimiento del CSV no genera una contestación ni una recomendación de Gemini.</div>
+                    <template v-if="selectedReview">
+                      <div class="review-section">
+                        <div class="review-heading"><strong>{{selectedReview.actionLabel}}</strong><span :class="['review-priority',selectedReview.priority==='ALTA'?'high':'medium']">{{selectedReview.priority==='ALTA'?'Prioritario':'Revisión normal'}}</span></div>
+                        <p class="review-evidence">Evidencia: {{selectedReview.evidenceState}}</p>
+                        <strong>Documentos e información por verificar</strong>
+                        <ul><li v-for="(gap,i) in selectedReview.needs" :key="i">{{gap}}</li></ul>
+                        <strong>Pasos sugeridos</strong>
+                        <ol><li v-for="(step,i) in selectedReview.steps" :key="i">{{step}}</li></ol>
+                        <label class="review-editor">Borrador editable para el auditor
+                          <textarea rows="14" :value="syntheticEdits[selectedSynthetic.ref]||''" @input="syntheticEdits[selectedSynthetic.ref]=($event.target as HTMLTextAreaElement).value"></textarea>
+                        </label>
+                        <p class="review-warning">{{selectedReview.warning}}</p>
+                      </div>
+                    </template>
+                    <div v-else class="helper-note">Carga reconocida. Pulsa «Revisar las objeciones sin IA» para obtener una clasificación preliminar, información faltante y un borrador interno.</div>
                   </div>
-                  <p class="muted synthetic-footer">Lectura local de datos sintéticos. No hay persistencia, auditoría médica ni transmisión a EPS. La respuesta automatizada operará al integrar la IPS.</p>
+                  <p class="muted synthetic-footer">Análisis preliminar local con reglas generales por familia de causal. No verifica documentos o contratos, no sustituye auditoría médica, no almacena datos ni transmite respuestas. Los borradores exportados NO están listos para radicación.</p>
                 </div>
                 <div v-if="fileColumns.length&&!preview" class="mapping-panel"><div class="panel-heading"><h4>Relacionar campos</h4><small>{{importCount}} registros</small></div>
                   <div class="mapping-fields">
