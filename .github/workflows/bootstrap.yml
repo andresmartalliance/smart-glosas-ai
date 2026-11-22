@@ -1,0 +1,39 @@
+name: Bootstrap Smart Glosas AI source
+on:
+  push:
+    paths:
+      - '_bootstrap/smart-glosas-src.tgz'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  install-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout bootstrap branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Restore independent V0.2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f _bootstrap/smart-glosas-src.tgz
+          tar -xzf _bootstrap/smart-glosas-src.tgz
+          rm -rf _bootstrap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: publish Smart Glosas AI V0.2 IPS-first on main"
+          git push origin HEAD:main
+      - name: Python backend tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r backend/requirements.txt
+      - run: cd backend && PYTHONPATH=. pytest -q
+      - name: Node frontend toolchain
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: cd frontend && npm install && npm run build
