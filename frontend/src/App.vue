@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {computed, onMounted, ref} from 'vue'
+import {inspectSyntheticFile, type SyntheticImportResult, type SyntheticObjection} from './syntheticImport'
 
 type View = 'resumen'|'prevent'|'respond'|'reglas'|'historial'
 type Institute={id:string;name:string;roles:string[]}
@@ -53,6 +54,9 @@ const objectionAmount=ref('')
 const respondFacts=ref('{}')
 const respondEvidence=ref('')
 const upload=ref<File|null>(null)
+const syntheticImport=ref<SyntheticImportResult|null>(null)
+const selectedSynthetic=ref<SyntheticObjection|null>(null)
+const formatCOP=(value:number)=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(value)
 const fileColumns=ref<string[]>([])
 const mapping=ref<Record<string,string>>({})
 const importPhase=ref<'PREVENT'|'RESPOND'>('PREVENT')
@@ -161,16 +165,27 @@ function importTargetFields(phase:'PREVENT'|'RESPOND'){
 function selectFile(event:Event,phase:'PREVENT'|'RESPOND'){
   upload.value=(event.target as HTMLInputElement).files?.[0]||null
   importPhase.value=phase;fileColumns.value=[];mapping.value={};importErrors.value=[];importCount.value=0
+  syntheticImport.value=null;selectedSynthetic.value=null;error.value='';notification.value=''
+  if(preview.value&&phase==='RESPOND'&&upload.value)void inspectFile()
 }
 async function inspectFile(){
-  if(preview.value||!upload.value)return
+  if(!upload.value)return
   busy.value=true;error.value=''
   try{
+    if(preview.value){
+      if(importPhase.value!=='RESPOND')throw Error('La importación de prueba está habilitada en Responder glosas.')
+      // Parse locally. Do not send uploaded test files to Railway, Gemini or any external service.
+      const parsed=await inspectSyntheticFile(upload.value)
+      syntheticImport.value=parsed
+      selectedSynthetic.value=parsed.items[0]||null
+      notification.value='Archivo leído en este navegador. No se ha enviado ni guardado información.'
+      return
+    }
     const form=new FormData();form.append('file',upload.value)
     const endpoint=importPhase.value==='PREVENT'?'/api/v1/imports/preview':'/api/v1/imports/objections/preview'
     const res=await request<{columns:string[];rows_detected:number}>(endpoint,'POST',form)
     fileColumns.value=res.columns;importCount.value=res.rows_detected
-  }catch(e){error.value=message(e)}finally{busy.value=false}
+  }catch(e){syntheticImport.value=null;error.value=message(e)}finally{busy.value=false}
 }
 async function processImport(){
   if(preview.value||!upload.value)return
@@ -348,10 +363,34 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
               </div>
               <div class="sheet">
                 <div class="panel-heading"><h3>Analizar un lote</h3><span class="subtle-label">Hasta 500 registros</span></div>
-                <p class="muted">Carga CSV o JSON de tu IPS o EPS. El mapeo se define según las columnas del archivo, sin formatos predefinidos por pagador.</p>
-                <label class="upload-box" :class="{'upload-disabled':preview}"><input type="file" :disabled="preview" accept=".csv,.json" @change="selectFile($event,view==='prevent'?'PREVENT':'RESPOND')"/><span>{{upload?.name||'Seleccionar archivo CSV o JSON'}}</span></label>
-                <button :disabled="busy||!upload||preview" class="secondary" @click="inspectFile">Leer columnas</button>
-                <div v-if="fileColumns.length" class="mapping-panel"><div class="panel-heading"><h4>Relacionar campos</h4><small>{{importCount}} registros</small></div>
+                <p class="muted">{{preview?(view==='respond'?'Selecciona el CSV sintético para inspeccionar sus glosas, devoluciones y soportes. Se procesa solo en tu navegador.':'La prevención operativa estará disponible con el contexto seguro de tu IPS.'):'Carga CSV o JSON de tu IPS o EPS. Las columnas se relacionan sin imponer un formato único por pagador.'}}</p>
+                <label class="upload-box" :class="{'upload-disabled':preview&&view==='prevent'}"><input type="file" :disabled="preview&&view==='prevent'" :accept="preview?'.csv':'.csv,.json'" @change="selectFile($event,view==='prevent'?'PREVENT':'RESPOND')"/><span>{{upload?.name|| (preview?'Seleccionar CSV sintético':'Seleccionar archivo CSV o JSON')}}</span></label>
+                <button :disabled="busy||!upload||(preview&&view==='prevent')" class="secondary" @click="inspectFile">{{busy?'Leyendo archivo…':preview?'Volver a leer CSV':'Leer columnas'}}</button>
+                <div v-if="preview&&syntheticImport&&view==='respond'" class="synthetic-results">
+                  <div class="synthetic-head"><strong>Archivo reconocido</strong><small>{{syntheticImport.filename}}</small></div>
+                  <div class="synthetic-metrics">
+                    <div><strong>{{syntheticImport.items.length}}</strong><span>Objeciones</span></div>
+                    <div><strong>{{syntheticImport.glosas}}</strong><span>Glosas</span></div>
+                    <div><strong>{{syntheticImport.devoluciones}}</strong><span>Devoluciones</span></div>
+                    <div><strong>{{syntheticImport.distinctAccounts}}</strong><span>Cuentas</span></div>
+                  </div>
+                  <div class="synthetic-amount">Valor objetado en el archivo <strong>{{formatCOP(syntheticImport.totalAmount)}}</strong></div>
+                  <p v-if="syntheticImport.errors.length" class="alert">{{syntheticImport.errors.length}} filas necesitan revisión.</p>
+                  <div class="synthetic-table-wrap"><table class="synthetic-table"><thead><tr><th>Referencia</th><th>Tipo</th><th>Causal</th><th>Valor</th></tr></thead><tbody>
+                    <tr v-for="item in syntheticImport.items" :key="item.ref" :class="{selected:selectedSynthetic?.ref===item.ref}" @click="selectedSynthetic=item">
+                      <td><button type="button" class="text-button" @click.stop="selectedSynthetic=item">{{item.ref}}</button></td><td>{{item.kind==='GLOSA'?'Glosa':'Devolución'}}</td><td>{{item.code}}</td><td>{{formatCOP(item.amount)}}</td>
+                    </tr></tbody></table></div>
+                  <div v-if="selectedSynthetic" class="synthetic-detail">
+                    <div class="panel-heading"><h4>{{selectedSynthetic.ref}} · {{selectedSynthetic.family}}</h4><span class="subtle-label">{{selectedSynthetic.code}}</span></div>
+                    <p>{{selectedSynthetic.description}}</p>
+                    <div><strong>Cuenta:</strong> {{selectedSynthetic.account}}</div>
+                    <div><strong>EPS:</strong> {{selectedSynthetic.payer||'No informada'}}</div>
+                    <div><strong>Soporte:</strong> {{selectedSynthetic.support}}</div>
+                    <div class="helper-note">Pendiente de evaluación normativa y documental. El reconocimiento del CSV no genera una contestación ni una recomendación de Gemini.</div>
+                  </div>
+                  <p class="muted synthetic-footer">Lectura local de datos sintéticos. No hay persistencia, auditoría médica ni transmisión a EPS. La respuesta automatizada operará al integrar la IPS.</p>
+                </div>
+                <div v-if="fileColumns.length&&!preview" class="mapping-panel"><div class="panel-heading"><h4>Relacionar campos</h4><small>{{importCount}} registros</small></div>
                   <div class="mapping-fields">
                     <label v-for="key in importTargetFields(importPhase)" :key="key">{{({account_ref:'Cuenta',payer:'EPS',modality:'Modalidad',service_type:'Servicio',issued_on:'Fecha de factura',objection_ref:'Referencia objeción',kind:'Glosa o devolución',description:'Descripción de la objeción',code:'Código de causal',amount:'Valor objetado'} as Record<string,string>)[key]||key}}
                       <select v-model="mapping[key]"><option value="">Sin mapear</option><option v-for="col in fileColumns" :key="col" :value="col">{{col}}</option></select>
