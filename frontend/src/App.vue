@@ -221,7 +221,7 @@ async function askGemini(item:Analysis){
   try{
     const response=await request<{id:string;ai_review:AIReview}>('/api/v1/analyses/'+item.id+'/ai-review','POST')
     item.ai_review=response.ai_review
-    notification.value='Gemini genero una propuesta para revision humana. No se envio a la EPS.'
+    notification.value='Clara preparó una propuesta para revisión humana. No se envió a la EPS.'
   }catch(e){error.value=message(e)}finally{busy.value=false}
 }
 function expectedValue(value:string){
@@ -325,7 +325,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
         </section>
         <template v-else>
           <section v-if="view==='resumen'">
-            <div class="hero"><div><span class="eyebrow">INTELIGENCIA DE CUENTAS MÉDICAS</span><h2>De la prevención a la respuesta.</h2><p>Analiza cuentas antes de radicar y gestiona objeciones recibidas de cualquier EPS. Cada evaluación conserva sus reglas y evidencias.</p></div><div class="hero-icon"><span>AI</span></div></div>
+            <div class="hero"><div><span class="eyebrow">INTELIGENCIA DE CUENTAS MÉDICAS</span><h2>De la prevención a la respuesta.</h2><p>Clara analiza cuentas antes de radicar y apoya la contestación de glosas y devoluciones. Cada evaluación conserva sus reglas y evidencias.</p></div><div class="hero-icon"><span>AI</span></div></div>
             <div class="feature-grid">
               <button class="feature" @click="view='prevent'"><span class="feature-icon">01</span><strong>Prevenir glosas</strong><p>Revisión previa a la radicación desde Armado de Cuentas o archivos de otras IPS.</p><span class="feature-action">Abrir análisis <span>→</span></span></button>
               <button class="feature" @click="view='respond'"><span class="feature-icon">02</span><strong>Responder glosas</strong><p>Clasificación, evidencia, subsanación y borradores controlados frente a objeciones.</p><span class="feature-action">Abrir respuestas <span>→</span></span></button>
@@ -411,14 +411,14 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
                 <div v-if="item.response_draft" class="draft"><strong>Propuesta basada en plantilla configurada</strong><p>{{item.response_draft}}</p><small>Requiere revisión de un auditor. No se transmite automáticamente.</small></div>
                 <div v-else-if="item.phase==='RESPOND'" class="helper-note">No hay contestación sustentada generable con las reglas y evidencias actuales. Revisión humana requerida.</div>
                 <div v-if="item.ai_review" class="draft" style="margin-top:14px">
-                  <strong>Propuesta de Gemini · {{item.ai_review.model}}</strong>
+                  <strong>Clara · análisis con Gemini</strong><small class="clara-model">{{item.ai_review.model}}</small>
                   <p>{{item.ai_review.summary}}</p>
                   <p><b>Tratamiento sugerido:</b> {{item.ai_review.suggested_action}}</p>
                   <p v-if="item.ai_review.draft"><b>Borrador sujeto a revision:</b> {{item.ai_review.draft}}</p>
                   <p v-if="item.ai_review.missing_information.length"><b>Informacion faltante:</b> {{item.ai_review.missing_information.join(' · ')}}</p>
                   <small>No se ha radicado, enviado ni aceptado ninguna objecion.</small>
                 </div>
-                <div class="result-bottom"><span>{{item.status==='APPROVED'?'Aprobado internamente':'Pendiente de revisión humana'}}</span><button v-if="geminiAvailable && item.status!=='APPROVED'" class="secondary small-button" :disabled="busy" @click="askGemini(item)">Analizar con Gemini</button><button v-if="item.status!=='APPROVED'" class="secondary small-button" :disabled="busy" @click="approve(item.id)">Aprobar evaluación</button></div>
+                <div class="result-bottom"><span>{{item.status==='APPROVED'?'Aprobado internamente':'Pendiente de revisión humana'}}</span><button v-if="geminiAvailable && item.status!=='APPROVED'" class="secondary small-button" :disabled="busy" @click="askGemini(item)">Consultar a Clara</button><button v-if="item.status!=='APPROVED'" class="secondary small-button" :disabled="busy" @click="approve(item.id)">Aprobar evaluación</button></div>
               </div>
               <p v-if="recentResults.length>30" class="muted">Se muestran los primeros 30 resultados. Consulta el histórico para acceder a todos.</p>
             </div>
