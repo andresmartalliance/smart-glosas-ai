@@ -101,6 +101,7 @@ def respond(objection: ObjectionInput, versions: list[tuple[RuleDefinition, int]
     result["objection_ref"] = objection.objection_ref
     result["objection_kind"] = objection.kind
     result["objection_code"] = objection.code
+    result["objection_description"] = objection.description
     result["amount"] = str(objection.amount) if objection.amount is not None else None
     result["suggested_action"] = "HUMAN_REVIEW"
     # Generate a draft ONLY from an institutionally authored/versioned response

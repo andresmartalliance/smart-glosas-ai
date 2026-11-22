@@ -1,11 +1,50 @@
 """Google identity verification; authorization always consults persisted membership."""
 import os
+import base64
+import binascii
+import hashlib
+import hmac
+import json
+import time
 from dataclasses import dataclass
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import get_db
 from .models import Tenant, Membership
+
+def platform_claims(authorization: str | None) -> dict:
+    """Short lived HMAC-signed actor and IPS context from Smart platform."""
+    secret = os.getenv("SMART_PLATFORM_JWT_SECRET", "")
+    if len(secret.encode()) < 32:
+        raise HTTPException(503, "Integracion con plataforma Smart no configurada")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Abre Smart Glosas AI desde la plataforma Smart")
+    try:
+        segments = authorization[7:].strip().split(".")
+        if len(segments) != 3:
+            raise ValueError()
+        header, body, signature = segments
+        decode = lambda v: base64.urlsafe_b64decode(v + "=" * (-len(v) % 4))
+        meta, claims = json.loads(decode(header)), json.loads(decode(body))
+        expected = hmac.new(secret.encode(), f"{header}.{body}".encode(), hashlib.sha256).digest()
+        if meta != {"alg": "HS256", "typ": "JWT"} or not hmac.compare_digest(expected, decode(signature)):
+            raise ValueError()
+        now = int(time.time())
+        if (claims.get("iss") != "smart-platform" or claims.get("aud") != "smart-glosas-ai"
+                or type(claims.get("exp")) is not int or claims["exp"] <= now
+                or claims["exp"] > now + 900 or not claims.get("sub")
+                or not isinstance(claims.get("roles"), list) or not claims.get("tenant_id")
+                or len(str(claims["tenant_id"])) > 36):
+            raise ValueError()
+        if claims.get("nbf", 0) > now or not isinstance(claims["sub"], str) or not isinstance(claims["tenant_id"], str):
+            raise ValueError()
+        if not all(isinstance(role, str) for role in claims["roles"]):
+            raise ValueError()
+        return claims
+    except (ValueError, TypeError, KeyError, binascii.Error, UnicodeDecodeError):
+        raise HTTPException(401, "Contexto de Smart invalido o vencido") from None
+
 
 @dataclass(frozen=True)
 class Actor:
@@ -14,6 +53,8 @@ class Actor:
     roles: frozenset[str]
 
 def current_email(authorization: str | None = Header(default=None)) -> str:
+    if os.getenv("SMART_AUTH_MODE", "google") == "platform":
+        return str(platform_claims(authorization)["sub"]).strip().lower()
     client_id = os.getenv("SMART_GOOGLE_CLIENT_ID", "").strip()
     if not client_id:
         raise HTTPException(status_code=503, detail="Inicio de sesión Google no configurado")
@@ -31,7 +72,17 @@ def current_email(authorization: str | None = Header(default=None)) -> str:
     return email
 
 def actor(tenant_id: str | None = Header(default=None, alias="X-Tenant-Id"),
-          email: str = Depends(current_email), db: Session = Depends(get_db)) -> Actor:
+          email: str = Depends(current_email), db: Session = Depends(get_db),
+          authorization: str | None = Header(default=None)) -> Actor:
+    if os.getenv("SMART_AUTH_MODE", "google") == "platform":
+        claims = platform_claims(authorization)
+        if tenant_id != claims["tenant_id"]:
+            raise HTTPException(403, "El contexto de IPS no coincide con el firmado por Smart")
+        tenant = db.scalar(select(Tenant).where(Tenant.id == tenant_id, Tenant.active.is_(True)))
+        if not tenant:
+            raise HTTPException(403, "IPS no habilitada en Smart Glosas AI")
+        allowed = frozenset({"ADMIN", "CONFIGURADOR", "AUDITOR", "ANALISTA"})
+        return Actor(email=email, tenant_id=tenant_id, roles=frozenset(claims["roles"]) & allowed)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Selecciona una institución")
     membership = db.scalar(select(Membership).join(Tenant, Tenant.id == Membership.tenant_id).where(

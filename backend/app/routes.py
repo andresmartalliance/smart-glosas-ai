@@ -9,12 +9,13 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Uploa
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
-from .auth import Actor, current_email, actor, require_admin
+from .auth import Actor, current_email, actor, require_admin, platform_claims
 from .db import get_db
 from .models import Tenant, Membership, RuleVersion, MappingProfile, Analysis, AuditEvent
 from .schemas import (TenantInput, RuleDefinition, MappingDefinition,
                       AccountInput, ObjectionInput, PreventBatch, RespondBatch)
 from .engine import apply_rules, respond
+from .gemini import generate_review
 from .importers import read_rows, normalize, normalize_objections
 
 router = APIRouter(prefix="/api/v1", tags=["smart-glosas"])
@@ -30,12 +31,27 @@ def active_rules(db: Session, tenant_id: str):
 
 @router.get("/config")
 def config():
-    return {"google_client_id": os.getenv("SMART_GOOGLE_CLIENT_ID", ""),
-            "product": "Smart Glosas AI", "version": "0.1.0",
+    return {"auth_mode": os.getenv("SMART_AUTH_MODE", "google"),
+            "gemini_available": bool(os.getenv("GEMINI_API_KEY", "").strip()),
+            "product": "Smart Glosas AI", "version": "0.3.0",
             "autonomous_submission": False}
 
 @router.get("/session")
-def session(email: str = Depends(current_email), db: Session = Depends(get_db)):
+def session(email: str = Depends(current_email), db: Session = Depends(get_db),
+            authorization: str | None = Header(default=None)):
+    if os.getenv("SMART_AUTH_MODE", "google") == "platform":
+        claims = platform_claims(authorization)
+        tenant = db.scalar(select(Tenant).where(Tenant.id == claims["tenant_id"], Tenant.active.is_(True)))
+        if tenant is None and "ADMIN" in claims["roles"] and isinstance(claims.get("tenant_name"), str):
+            name = claims["tenant_name"].strip()[:200]
+            if len(name) >= 2:
+                tenant = Tenant(id=claims["tenant_id"], name=name)
+                db.add(tenant)
+                db.add(AuditEvent(tenant_id=tenant.id, actor=email, action="PLATFORM_TENANT_PROVISIONED",
+                                  subject_id=tenant.id, details={}))
+                db.commit()
+        return {"email": email, "institutions": ([{"id": tenant.id, "name": tenant.name,
+                "roles": claims["roles"]}] if tenant else []), "can_create_institution": False}
     memberships = db.scalars(select(Membership).join(Tenant, Tenant.id == Membership.tenant_id).where(
         Membership.email == email, Membership.active.is_(True), Tenant.active.is_(True))).all()
     names = {t.id: t.name for t in db.scalars(select(Tenant).where(Tenant.id.in_([m.tenant_id for m in memberships]))).all()}
@@ -46,6 +62,8 @@ def session(email: str = Depends(current_email), db: Session = Depends(get_db)):
 
 @router.post("/institutions", status_code=201)
 def create_institution(body: TenantInput, email: str = Depends(current_email), db: Session = Depends(get_db)):
+    if os.getenv("SMART_AUTH_MODE", "google") == "platform":
+        raise HTTPException(403, "Las IPS se provisionan desde la plataforma Smart")
     permitted = {x.strip().lower() for x in os.getenv("SMART_GLOSAS_BOOTSTRAP_EMAILS", "").split(",") if x.strip()}
     if os.getenv("APP_ENV", "development") != "development" or email not in permitted:
         raise HTTPException(403, "Creación de instituciones no habilitada para esta cuenta")
@@ -183,6 +201,20 @@ def analyze_respond(body: RespondBatch, user: Actor = Depends(actor), db: Sessio
         outputs.append({"id": record.id, "status": record.status, **outcome})
     db.commit()
     return {"total": len(outputs), "analyses": outputs}
+
+@router.post("/analyses/{analysis_id}/ai-review")
+def review_with_ai(analysis_id: str, user: Actor = Depends(actor), db: Session = Depends(get_db)):
+    row = db.scalar(select(Analysis).where(Analysis.id == analysis_id,
+        Analysis.tenant_id == user.tenant_id).with_for_update())
+    if row is None:
+        raise HTTPException(404, "Analisis no encontrado")
+    if row.status != "PENDING_REVIEW":
+        raise HTTPException(409, "No se revisan con IA los analisis ya aprobados")
+    review = generate_review(row.result)
+    row.result = {**row.result, "ai_review": review}
+    log(db, user, "AI_REVIEW_REQUESTED", row.id, {"model": review["model"], "phase": row.phase})
+    db.commit()
+    return {"id": row.id, "ai_review": review}
 
 @router.get("/analyses")
 def analyses(phase: str | None = None, user: Actor = Depends(actor), db: Session = Depends(get_db)):

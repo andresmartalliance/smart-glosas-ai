@@ -89,3 +89,7 @@ En `contracts/` se incluyen especificaciones iniciales JSON Schema (`assembled-a
 El codigo se entrega en un repositorio Git independiente con rama principal `main` y en un `.bundle` transportable. **La existencia de un commit local no equivale a una publicacion remota**. Para crear un repo privado GitHub, publicar `main`, crear los servicios en Railway e integrar con GitLab, seguir `docs/INTEGRACION_GITHUB_GITLAB.md`.
 
 El frontend Vue 3 esta conectado a rutas API reales y no utiliza informacion de prueba precargada. Para ingresar requiere Google OAuth y una institucion autorizada. El compilado Vite y el navegador autenticado deben validarse una vez publicados en un CI con dependencias npm disponibles.
+
+## V0.3 - Smart integrado y Gemini
+
+Frontend sin Google Sign-In propio: recibe contexto firmado desde la plataforma Smart, con IPS y rol validados por backend. Servicio de Gemini en FastAPI mediante POST /api/v1/analyses/{id}/ai-review (manual y auditado). No se envian respuestas a EPS. Requiere variables SMART_AUTH_MODE=platform, SMART_PLATFORM_JWT_SECRET, VITE_SMART_HOST_ORIGIN y GEMINI_API_KEY. Ver docs/INTEGRACION_SMART.md. Datos sinteticos unicamente hasta validacion de privacidad.

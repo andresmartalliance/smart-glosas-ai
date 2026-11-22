@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, nextTick, onMounted, ref} from 'vue'
+import {computed, onMounted, ref} from 'vue'
 
 type View = 'resumen'|'prevent'|'respond'|'reglas'|'historial'
 type Institute={id:string;name:string;roles:string[]}
@@ -7,16 +7,16 @@ type Profile={email:string;institutions:Institute[];can_create_institution:boole
 type Rule={id:string;rule_key:string;version:number;name:string;phase:string;category:string;scope:Record<string,string>}
 type Summary={id:string;phase:string;account_ref:string;payer:string|null;objection_ref?:string|null;summary:string;status:string;counts:{review:number;insufficient:number;passed:number}}
 type Finding={rule_key:string;rule_version:number;status:string;category:string;severity:string;message:string;recommendation:string|null;source_ref:string|null}
-type Analysis={id:string;status:string;phase:string;account_ref:string;objection_ref?:string;objection_kind?:string;objection_code?:string;summary:string;counts:{review:number;insufficient:number;passed:number};findings:Finding[];response_draft?:string|null;draft_options?:Array<{action:string;text:string;rule_key:string;source_ref:string;supporting_evidence:Array<{id:string;kind:string;reference?:string}>}>;requires_human_review:boolean}
-type GoogleIdentity={initialize:(args:{client_id:string;callback:(v:{credential:string})=>void})=>void;renderButton:(el:HTMLElement,options:Record<string,string>)=>void}
+type Analysis={ai_review?:AIReview|null;id:string;status:string;phase:string;account_ref:string;objection_ref?:string;objection_kind?:string;objection_code?:string;summary:string;counts:{review:number;insufficient:number;passed:number};findings:Finding[];response_draft?:string|null;draft_options?:Array<{action:string;text:string;rule_key:string;source_ref:string;supporting_evidence:Array<{id:string;kind:string;reference?:string}>}>;requires_human_review:boolean}
+type AIReview={summary:string;suggested_action:string;draft:string|null;missing_information:string[];warnings:string[];requires_human_review:boolean;model:string}
 
 const API=(import.meta.env.VITE_API_URL||'http://localhost:8080').replace(/\/$/,'')
+const HOST_ORIGIN=import.meta.env.VITE_SMART_HOST_ORIGIN||''
 const view=ref<View>('resumen')
 const credential=ref('')
 const me=ref<Profile|null>(null)
 const tenantId=ref('')
-const googleClientId=ref('')
-const authMount=ref<HTMLElement|null>(null)
+const geminiAvailable=ref(false)
 const ready=ref(false)
 const error=ref('')
 const notification=ref('')
@@ -24,7 +24,6 @@ const busy=ref(false)
 const records=ref<Summary[]>([])
 const rules=ref<Rule[]>([])
 const recentResults=ref<Analysis[]>([])
-const newInstitution=ref('')
 const canWriteRules=computed(()=>me.value?.institutions.find(t=>t.id===tenantId.value)?.roles.some(r=>['ADMIN','CONFIGURADOR'].includes(r))||false)
 const institution=computed(()=>me.value?.institutions.find(t=>t.id===tenantId.value))
 const nav:{id:View;label:string;num:string}[]=[
@@ -77,7 +76,7 @@ async function loadWorkspace(){
   const [r,h]=await Promise.all([request<Rule[]>('/api/v1/rules'),request<Summary[]>('/api/v1/analyses')])
   rules.value=r;records.value=h
 }
-async function login(token:string){
+async function attachHostContext(token:string){
   busy.value=true;error.value=''
   try{
     credential.value=token
@@ -88,54 +87,24 @@ async function login(token:string){
   }catch(e){credential.value='';me.value=null;tenantId.value='';error.value=message(e)}
   finally{busy.value=false}
 }
-function logout(){
-  credential.value='';me.value=null;tenantId.value='';records.value=[];rules.value=[];view.value='resumen'
-  nextTick(()=>{void showGoogle()})
-}
 function message(e:unknown){return e instanceof Error?e.message:'No fue posible completar la operación'}
-function googleIdentity():GoogleIdentity|null{
-  return (window as unknown as {google?:{accounts?:{id?:GoogleIdentity}}}).google?.accounts?.id||null
-}
-async function showGoogle(){
-  if(!googleClientId.value)return
-  try{
-    if(!googleIdentity()){
-      await new Promise<void>((resolve,reject)=>{
-        const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.async=true
-        s.onload=()=>resolve();s.onerror=()=>reject(new Error('No se pudo cargar Google'))
-        document.head.append(s)
-      })
-    }
-    await nextTick()
-    if(!authMount.value)return
-    const google=googleIdentity()
-    if(!google)throw new Error('Identidad Google no disponible')
-    google.initialize({client_id:googleClientId.value,callback:(v)=>{void login(v.credential)}})
-    authMount.value.replaceChildren()
-    google.renderButton(authMount.value,{type:'standard',theme:'outline',size:'large',text:'signin_with',shape:'pill'})
-  }catch(e){error.value=message(e)}
-}
 onMounted(async()=>{
   try{
-    const c=await fetch(API+'/api/v1/config').then(r=>r.json()) as {google_client_id:string}
-    googleClientId.value=c.google_client_id||''
-  }catch{error.value='No se pudo conectar con el servicio Smart Glosas AI.'}
+    const c=await fetch(API+'/api/v1/config').then(r=>r.json()) as {gemini_available:boolean}
+    geminiAvailable.value=Boolean(c.gemini_available)
+  }catch{error.value='No se pudo conectar con Smart Glosas AI.'}
   ready.value=true
-  await showGoogle()
+  window.addEventListener('message',(event:MessageEvent)=>{
+    if(!HOST_ORIGIN||event.origin!==HOST_ORIGIN||event.source!==window.parent)return
+    if(event.data?.type==='SMART_GLOSAS_CONTEXT'&&typeof event.data.token==='string'){
+      void attachHostContext(event.data.token)
+    }
+  })
+  if(HOST_ORIGIN&&window.parent!==window)window.parent.postMessage({type:'SMART_GLOSAS_READY'},HOST_ORIGIN)
 })
 async function selectInstitution(id:string){
   tenantId.value=id;error.value='';notification.value='';recentResults.value=[]
   try{await loadWorkspace()}catch(e){error.value=message(e)}
-}
-async function createInstitution(){
-  if(!newInstitution.value.trim())return
-  busy.value=true;error.value=''
-  try{
-    await request('/api/v1/institutions','POST',{name:newInstitution.value})
-    me.value=await request<Profile>('/api/v1/session')
-    await selectInstitution(me.value.institutions.at(-1)?.id||'')
-    newInstitution.value=''
-  }catch(e){error.value=message(e)}finally{busy.value=false}
 }
 function parseFacts(text:string):Record<string,unknown>{
   const result=JSON.parse(text) as unknown
@@ -226,6 +195,14 @@ async function approve(id:string){
     notification.value='Revisión aprobada internamente. No se ha enviado a ninguna EPS.'
   }catch(e){error.value=message(e)}finally{busy.value=false}
 }
+async function askGemini(item:Analysis){
+  busy.value=true;error.value='';notification.value=''
+  try{
+    const response=await request<{id:string;ai_review:AIReview}>('/api/v1/analyses/'+item.id+'/ai-review','POST')
+    item.ai_review=response.ai_review
+    notification.value='Gemini genero una propuesta para revision humana. No se envio a la EPS.'
+  }catch(e){error.value=message(e)}finally{busy.value=false}
+}
 function expectedValue(value:string){
   const t=value.trim()
   if(t==='true')return true
@@ -281,13 +258,11 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
       <div class="brand-mark">S</div>
       <div class="brand-eyebrow">SMART ALLIANCE</div>
       <h1>Smart Glosas AI</h1>
-      <p>Prevención y respuesta inteligente de glosas y devoluciones.</p>
-      <div v-if="!ready" class="muted">Preparando acceso seguro…</div>
-      <div v-else-if="!googleClientId" class="alert">El inicio de sesión Google debe configurarse en el servicio de Smart Glosas AI.</div>
-      <div ref="authMount" class="google-mount"></div>
-      <div v-if="busy" class="muted">Validando la cuenta…</div>
-      <div v-if="error" role="alert" class="alert">{{error}}</div>
-      <div class="auth-footer">Acceso exclusivo para organizaciones autorizadas</div>
+      <p>Prevencion y respuesta inteligente de glosas y devoluciones.</p>
+      <p class="muted" style="margin-top:20px">Este modulo se abre desde la plataforma Smart. No requiere otro inicio de sesion.</p>
+      <div v-if="!ready||busy" class="muted" style="margin-top:14px">Conectando con Smart…</div>
+      <div v-if="error" role="alert" class="alert" style="margin-top:14px">{{error}}</div>
+      <div class="auth-footer">La plataforma Smart proporciona la institucion y el contexto de acceso.</div>
     </div>
   </div>
 
@@ -308,7 +283,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
           <select v-if="me?.institutions.length" :value="tenantId" aria-label="Institución activa" @change="selectInstitution(($event.target as HTMLSelectElement).value)">
             <option v-for="t in me.institutions" :key="t.id" :value="t.id">{{t.name}}</option>
           </select>
-          <span class="session-user">{{me?.email}}</span><button class="text-button" @click="logout">Salir</button>
+          <span class="session-user">{{me?.email}}</span>
         </div>
       </header>
       <div class="page-content">
@@ -316,8 +291,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
         <div v-if="notification" role="status" class="notice">{{notification}}</div>
         <section v-if="!tenantId" class="sheet">
           <h2>Configurar organización</h2>
-          <p class="muted">Tu cuenta todavía no tiene una IPS asociada. El administrador debe autorizarla.</p>
-          <div v-if="me?.can_create_institution" class="inline-form"><input v-model="newInstitution" placeholder="Nombre de la IPS"/><button :disabled="busy" class="primary" @click="createInstitution">Crear institución</button></div>
+          <p class="muted">No existe una IPS habilitada para el contexto enviado por Smart. Contacta al administrador.</p>
         </section>
         <template v-else>
           <section v-if="view==='resumen'">
@@ -382,7 +356,15 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
                 <div v-for="(finding,i) in item.findings" :key="i" class="finding"><div><strong>{{finding.category}}</strong> · {{statusText(finding.status)}}<p>{{finding.message}}</p><small v-if="finding.recommendation">{{finding.recommendation}}</small><small v-if="finding.source_ref">Fuente: {{finding.source_ref}}</small></div></div>
                 <div v-if="item.response_draft" class="draft"><strong>Propuesta basada en plantilla configurada</strong><p>{{item.response_draft}}</p><small>Requiere revisión de un auditor. No se transmite automáticamente.</small></div>
                 <div v-else-if="item.phase==='RESPOND'" class="helper-note">No hay contestación sustentada generable con las reglas y evidencias actuales. Revisión humana requerida.</div>
-                <div class="result-bottom"><span>{{item.status==='APPROVED'?'Aprobado internamente':'Pendiente de revisión humana'}}</span><button v-if="item.status!=='APPROVED'" class="secondary small-button" :disabled="busy" @click="approve(item.id)">Aprobar evaluación</button></div>
+                <div v-if="item.ai_review" class="draft" style="margin-top:14px">
+                  <strong>Propuesta de Gemini · {{item.ai_review.model}}</strong>
+                  <p>{{item.ai_review.summary}}</p>
+                  <p><b>Tratamiento sugerido:</b> {{item.ai_review.suggested_action}}</p>
+                  <p v-if="item.ai_review.draft"><b>Borrador sujeto a revision:</b> {{item.ai_review.draft}}</p>
+                  <p v-if="item.ai_review.missing_information.length"><b>Informacion faltante:</b> {{item.ai_review.missing_information.join(' · ')}}</p>
+                  <small>No se ha radicado, enviado ni aceptado ninguna objecion.</small>
+                </div>
+                <div class="result-bottom"><span>{{item.status==='APPROVED'?'Aprobado internamente':'Pendiente de revisión humana'}}</span><button v-if="geminiAvailable && item.status!=='APPROVED'" class="secondary small-button" :disabled="busy" @click="askGemini(item)">Analizar con Gemini</button><button v-if="item.status!=='APPROVED'" class="secondary small-button" :disabled="busy" @click="approve(item.id)">Aprobar evaluación</button></div>
               </div>
               <p v-if="recentResults.length>30" class="muted">Se muestran los primeros 30 resultados. Consulta el histórico para acceder a todos.</p>
             </div>
