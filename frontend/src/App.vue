@@ -14,6 +14,8 @@ const API=(import.meta.env.VITE_API_URL||'http://localhost:8080').replace(/\/$/,
 const HOST_ORIGIN=import.meta.env.VITE_SMART_HOST_ORIGIN||''
 const view=ref<View>('resumen')
 const credential=ref('')
+const preview=ref(false)
+const previewAvailable=import.meta.env.VITE_STANDALONE_PREVIEW==='true'
 const me=ref<Profile|null>(null)
 const tenantId=ref('')
 const geminiAvailable=ref(false)
@@ -77,6 +79,7 @@ async function loadWorkspace(){
   rules.value=r;records.value=h
 }
 async function attachHostContext(token:string){
+  preview.value=false
   busy.value=true;error.value=''
   try{
     credential.value=token
@@ -157,7 +160,7 @@ function selectFile(event:Event,phase:'PREVENT'|'RESPOND'){
   importPhase.value=phase;fileColumns.value=[];mapping.value={};importErrors.value=[];importCount.value=0
 }
 async function inspectFile(){
-  if(!upload.value)return
+  if(preview.value||!upload.value)return
   busy.value=true;error.value=''
   try{
     const form=new FormData();form.append('file',upload.value)
@@ -167,7 +170,7 @@ async function inspectFile(){
   }catch(e){error.value=message(e)}finally{busy.value=false}
 }
 async function processImport(){
-  if(!upload.value)return
+  if(preview.value||!upload.value)return
   busy.value=true;error.value='';notification.value=''
   try{
     const form=new FormData();form.append('file',upload.value)
@@ -239,6 +242,7 @@ async function openHistory(id:string){
   }catch(e){error.value=message(e)}
 }
 async function exportHistory(){
+  if(preview.value)return
   error.value=''
   try{
     const response=await fetch(API+'/api/v1/exports/analyses.csv',{headers:{Authorization:'Bearer '+credential.value,'X-Tenant-Id':tenantId.value}})
@@ -253,22 +257,27 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
 </script>
 
 <template>
-  <div v-if="!credential" class="auth-page">
+  <div v-if="!credential && !preview" class="auth-page">
     <div class="auth-card">
       <div class="brand-mark">S</div>
       <div class="brand-eyebrow">SMART ALLIANCE</div>
       <h1>Smart Glosas AI</h1>
-      <p>Prevencion y respuesta inteligente de glosas y devoluciones.</p>
-      <p class="muted" style="margin-top:20px">Este modulo se abre desde la plataforma Smart. No requiere otro inicio de sesion.</p>
-      <div v-if="!ready||busy" class="muted" style="margin-top:14px">Conectando con Smart…</div>
-      <div v-if="error" role="alert" class="alert" style="margin-top:14px">{{error}}</div>
-      <div class="auth-footer">La plataforma Smart proporciona la institucion y el contexto de acceso.</div>
+      <p class="access-lead">Inteligencia para prevenir glosas y responder devoluciones con evidencia.</p>
+      <div class="access-capabilities">
+        <div><span class="access-number">01</span><div><strong>Prevenir glosas</strong><small>Revisa cuentas antes de radicar.</small></div></div>
+        <div><span class="access-number">02</span><div><strong>Responder objeciones</strong><small>Prepara contestaciones y subsanaciones sustentadas.</small></div></div>
+      </div>
+      <button v-if="previewAvailable" class="primary access-action" @click="preview=true;error='';view='resumen'">Explorar la plataforma <span aria-hidden="true">→</span></button>
+      <p v-if="previewAvailable" class="access-hint">Recorrido visual sin acceso a información institucional.</p>
+      <div v-if="!ready||busy" class="muted access-status">Conectando con Smart…</div>
+      <div v-if="error" role="alert" class="alert access-status">{{error}}</div>
+      <div class="auth-footer">El acceso operativo se realiza desde la plataforma Smart. No requiere otra cuenta.</div>
     </div>
   </div>
 
   <div v-else class="shell">
     <aside class="sidebar">
-      <div class="sidebar-brand"><div class="brand-mark small">S</div><div><b>Smart Glosas AI</b><small>FINANCIAL INTELLIGENCE</small></div></div>
+      <div class="sidebar-brand"><div class="brand-mark small">S</div><div><b>Smart Glosas AI</b><small>CUENTAS MÉDICAS</small></div></div>
       <div class="nav-caption">PLATAFORMA IPS</div>
       <nav aria-label="Navegación principal">
         <button v-for="item in nav" :key="item.id" :class="['nav-item',{active:view===item.id}]" @click="view=item.id;recentResults=[];error='';notification=''">
@@ -283,25 +292,28 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
           <select v-if="me?.institutions.length" :value="tenantId" aria-label="Institución activa" @change="selectInstitution(($event.target as HTMLSelectElement).value)">
             <option v-for="t in me.institutions" :key="t.id" :value="t.id">{{t.name}}</option>
           </select>
-          <span class="session-user">{{me?.email}}</span>
+          <span v-if="preview" class="session-preview">Recorrido del producto</span>
+          <button v-if="preview" class="text-button" @click="preview=false;view='resumen';error='';notification=''">Salir</button>
+          <span v-if="me?.email" class="session-user">{{me.email}}</span>
         </div>
       </header>
       <div class="page-content">
         <div v-if="error" role="alert" class="alert"><b>Atención</b> {{error}}</div>
         <div v-if="notification" role="status" class="notice">{{notification}}</div>
-        <section v-if="!tenantId" class="sheet">
+        <div v-if="preview" class="preview-banner"><span class="preview-dot"></span><div><b>Explora Smart Glosas AI</b><span>Las pantallas están disponibles para conocer el producto. El análisis de cuentas se habilita al vincular una IPS.</span></div></div>
+        <section v-if="!tenantId && !preview" class="sheet">
           <h2>Configurar organización</h2>
           <p class="muted">No existe una IPS habilitada para el contexto enviado por Smart. Contacta al administrador.</p>
         </section>
         <template v-else>
           <section v-if="view==='resumen'">
-            <div class="hero"><div><span class="eyebrow">INTELIGENCIA DE CUENTAS MÉDICAS</span><h2>De la prevención a la respuesta.</h2><p>Analiza cuentas antes de radicar y gestiona objeciones recibidas de cualquier EPS. Cada evaluación conserva sus reglas y evidencias.</p></div><div class="hero-icon">S<span>AI</span></div></div>
+            <div class="hero"><div><span class="eyebrow">INTELIGENCIA DE CUENTAS MÉDICAS</span><h2>De la prevención a la respuesta.</h2><p>Analiza cuentas antes de radicar y gestiona objeciones recibidas de cualquier EPS. Cada evaluación conserva sus reglas y evidencias.</p></div><div class="hero-icon"><span>AI</span></div></div>
             <div class="feature-grid">
               <button class="feature" @click="view='prevent'"><span class="feature-icon">01</span><strong>Prevenir glosas</strong><p>Revisión previa a la radicación desde Armado de Cuentas o archivos de otras IPS.</p><span class="feature-action">Abrir análisis <span>→</span></span></button>
               <button class="feature" @click="view='respond'"><span class="feature-icon">02</span><strong>Responder glosas</strong><p>Clasificación, evidencia, subsanación y borradores controlados frente a objeciones.</p><span class="feature-action">Abrir respuestas <span>→</span></span></button>
             </div>
-            <div class="metrics"><div><small>Análisis registrados</small><strong>{{records.length}}</strong></div><div><small>Preventivos</small><strong>{{records.filter(r=>r.phase==='PREVENT').length}}</strong></div><div><small>De respuesta</small><strong>{{records.filter(r=>r.phase==='RESPOND').length}}</strong></div><div><small>Reglas activas</small><strong>{{rules.length}}</strong></div></div>
-            <p class="muted footnote">Los indicadores corresponden a los últimos 100 análisis de esta institución. No representan dinero recuperado ni probabilidad estadística.</p>
+            <div class="metrics"><div><small>Análisis registrados</small><strong>{{preview?"—":records.length}}</strong></div><div><small>Preventivos</small><strong>{{preview?'—':records.filter(r=>r.phase==='PREVENT').length}}</strong></div><div><small>De respuesta</small><strong>{{preview?'—':records.filter(r=>r.phase==='RESPOND').length}}</strong></div><div><small>Reglas activas</small><strong>{{preview?"—":rules.length}}</strong></div></div>
+            <p class="muted footnote">{{preview?'Los indicadores se actualizarán cuando la institución comience a procesar cuentas.':'Los indicadores corresponden a los últimos 100 análisis de esta institución. No representan dinero recuperado ni probabilidad estadística.'}}</p>
           </section>
           <section v-else-if="view==='prevent'||view==='respond'">
             <div class="section-intro"><div><span class="eyebrow">{{view==='prevent'?'ANTES DE RADICAR':'DESPUÉS DE LA OBJECIÓN'}}</span><h2>{{view==='prevent'?'Análisis preventivo de cuentas':'Análisis de glosas y devoluciones'}}</h2><p>{{view==='prevent'?'Verifica riesgos con la información disponible. Si falta documentación, el resultado lo indica.':'Analiza causales y evidencia. Las contestaciones requieren revisión y aprobación institucional.'}}</p></div></div>
@@ -329,20 +341,20 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
                   <textarea v-if="view==='prevent'" v-model="preventEvidence" rows="3" placeholder="CONTRATO | Archivo contractual verificado"/>
                   <textarea v-else v-model="respondEvidence" rows="3" placeholder="FACTURA | Referencia del documento"/>
                 </details>
-                <div class="panel-footer"><button class="primary" :disabled="busy" @click="runIndividual(view==='prevent'?'PREVENT':'RESPOND')">{{busy?'Analizando…':'Analizar cuenta'}}</button></div>
+                <div class="panel-footer"><button class="primary" :disabled="busy||preview" @click="runIndividual(view==='prevent'?'PREVENT':'RESPOND')">{{busy?'Analizando…':'Analizar cuenta'}}</button></div>
               </div>
               <div class="sheet">
                 <div class="panel-heading"><h3>Analizar un lote</h3><span class="subtle-label">Hasta 500 registros</span></div>
                 <p class="muted">Carga CSV o JSON de tu IPS o EPS. El mapeo se define según las columnas del archivo, sin formatos predefinidos por pagador.</p>
-                <label class="upload-box"><input type="file" accept=".csv,.json" @change="selectFile($event,view==='prevent'?'PREVENT':'RESPOND')"/><span>{{upload?.name||'Seleccionar archivo CSV o JSON'}}</span></label>
-                <button :disabled="busy||!upload" class="secondary" @click="inspectFile">Leer columnas</button>
+                <label class="upload-box" :class="{'upload-disabled':preview}"><input type="file" :disabled="preview" accept=".csv,.json" @change="selectFile($event,view==='prevent'?'PREVENT':'RESPOND')"/><span>{{upload?.name||'Seleccionar archivo CSV o JSON'}}</span></label>
+                <button :disabled="busy||!upload||preview" class="secondary" @click="inspectFile">Leer columnas</button>
                 <div v-if="fileColumns.length" class="mapping-panel"><div class="panel-heading"><h4>Relacionar campos</h4><small>{{importCount}} registros</small></div>
                   <div class="mapping-fields">
                     <label v-for="key in importTargetFields(importPhase)" :key="key">{{({account_ref:'Cuenta',payer:'EPS',modality:'Modalidad',service_type:'Servicio',issued_on:'Fecha de factura',objection_ref:'Referencia objeción',kind:'Glosa o devolución',description:'Descripción de la objeción',code:'Código de causal',amount:'Valor objetado'} as Record<string,string>)[key]||key}}
                       <select v-model="mapping[key]"><option value="">Sin mapear</option><option v-for="col in fileColumns" :key="col" :value="col">{{col}}</option></select>
                     </label>
                   </div>
-                  <button class="primary" :disabled="busy" @click="processImport">{{busy?'Procesando…':'Analizar registros normalizados'}}</button>
+                  <button class="primary" :disabled="busy||preview" @click="processImport">{{busy?'Procesando…':'Analizar registros normalizados'}}</button>
                 </div>
                 <p v-if="importErrors.length" class="alert">{{importErrors.length}} filas no pudieron procesarse. Revisa el archivo y sus campos.</p>
                 <div class="helper-note"><b>Control:</b> se conserva la separación entre análisis y envío formal a EPS. Nada se transmite automáticamente.</div>
@@ -370,7 +382,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
             </div>
           </section>
           <section v-else-if="view==='historial'">
-            <div class="section-intro row-between"><div><span class="eyebrow">TRAZABILIDAD</span><h2>Seguimiento</h2><p>Histórico de análisis y estados de revisión de esta institución.</p></div><button class="secondary" @click="exportHistory">Exportar CSV</button></div>
+            <div class="section-intro row-between"><div><span class="eyebrow">TRAZABILIDAD</span><h2>Seguimiento</h2><p>Histórico de análisis y estados de revisión de esta institución.</p></div><button class="secondary" :disabled="preview" @click="exportHistory">Exportar CSV</button></div>
             <div class="sheet table-sheet"><table><thead><tr><th>Cuenta</th><th>EPS</th><th>Proceso</th><th>Resultado</th><th>Estado</th><th></th></tr></thead><tbody><tr v-for="row in records" :key="row.id"><td>{{row.account_ref}}</td><td>{{row.payer||'—'}}</td><td>{{row.phase==='PREVENT'?'Preventivo':'Respuesta'}}</td><td>{{statusText(row.summary)}}</td><td>{{row.status==='APPROVED'?'Aprobado':'Por revisar'}}</td><td><button class="text-button" @click="openHistory(row.id)">Abrir</button></td></tr><tr v-if="!records.length"><td colspan="6">Aún no hay análisis registrados.</td></tr></tbody></table></div>
           </section>
           <section v-else-if="view==='reglas'">
