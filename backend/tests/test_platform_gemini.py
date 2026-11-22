@@ -58,5 +58,6 @@ def test_ai_keeps_drafts_human_reviewed(monkeypatch):
     monkeypatch.setattr("app.gemini.httpx.Client",Client)
     no_sources=generate_review({"phase":"RESPOND","findings":[]})
     assert no_sources["draft"] is None and no_sources["requires_human_review"]
+    assert no_sources["agent"] == "Clara" and no_sources["provider"] == "gemini"
     sourced=generate_review({"phase":"RESPOND","findings":[{"status":"REVIEW","source_ref":"Referencia verificable"}]})
     assert sourced["draft"]=="Borrador de prueba"
