@@ -33,7 +33,7 @@ def active_rules(db: Session, tenant_id: str):
 def config():
     return {"auth_mode": os.getenv("SMART_AUTH_MODE", "google"),
             "gemini_available": bool(os.getenv("GEMINI_API_KEY", "").strip()),
-            "product": "Smart Glosas AI", "version": "0.3.0",
+            "product": "Smart Glosas AI", "agent": "Clara", "ai_provider": "gemini", "version": "0.4.0",
             "autonomous_submission": False}
 
 @router.get("/session")
