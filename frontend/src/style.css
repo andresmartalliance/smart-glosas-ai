@@ -162,3 +162,53 @@
 .google-access-intro p{font-size:12px;color:#597995;margin-top:5px}
 .google-access-intro span{white-space:nowrap;color:#7392ae;font-size:11px}
 @media(max-width:820px){.topbar{flex-wrap:wrap}.session-area{justify-content:flex-start;width:100%}.google-access{min-width:0}}
+
+/* Login corporativo — identidad y distribución alineadas con Smart Service Desk */
+.auth-page{
+  min-height:100vh;
+  background:#f5f7fb;
+  display:grid;
+  place-items:center;
+  padding:24px;
+}
+.auth-page .auth-card{
+  width:min(100%,550px);
+  max-width:550px;
+  padding:47px 48px 48px;
+  border:1px solid #dfe4ed;
+  border-radius:25px;
+  background:#fff;
+  box-shadow:0 10px 32px rgba(22,38,59,.035);
+  display:flex;
+  align-items:center;
+  flex-direction:column;
+  text-align:center;
+}
+.auth-brand-logo{display:block;width:204px;height:auto;max-height:76px;object-fit:contain;margin:0 auto 30px;}
+.auth-page .auth-card h1{
+  font-size:32px;
+  font-weight:800;
+  letter-spacing:-1.4px;
+  line-height:1.18;
+  color:#222630;
+  margin:0 0 20px;
+}
+.auth-page .auth-card .auth-description{
+  font-size:15px;
+  line-height:1.62;
+  color:#718093;
+  font-weight:400;
+  max-width:415px;
+  margin:0 0 32px;
+}
+.auth-page .google-access{min-width:260px;width:100%;display:flex;align-items:center;flex-direction:column;justify-content:center;gap:6px}
+.auth-page .google-access-button{min-width:260px;min-height:42px}
+.auth-page .google-access-warning{max-width:385px}
+.auth-page .auth-loading{margin-top:12px}
+.auth-page .auth-error{margin:17px 0 0;width:100%;text-align:left}
+@media(max-width:560px){
+  .auth-page .auth-card{padding:42px 25px;width:100%;border-radius:22px}
+  .auth-brand-logo{width:180px;margin-bottom:27px}
+  .auth-page .auth-card h1{font-size:29px;letter-spacing:-1px}
+  .auth-page .auth-card .auth-description{font-size:14px}
+}

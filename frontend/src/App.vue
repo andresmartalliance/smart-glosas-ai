@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import {computed, nextTick, onMounted, ref, watch} from 'vue'
+import {computed, onMounted, ref} from 'vue'
 import ObjectionHistory from './ObjectionHistory.vue'
 import GoogleAccess from './GoogleAccess.vue'
+import {SMART_BRAND_LOGO} from './smartLogo'
 
 type View = 'resumen'|'prevent'|'respond'|'reglas'|'historial'
 type Institute={id:string;name:string;roles:string[]}
@@ -20,7 +21,6 @@ const HOST_ORIGIN=import.meta.env.VITE_SMART_HOST_ORIGIN||''
 const view=ref<View>('resumen')
 const credential=ref('')
 const preview=ref(false)
-const previewAvailable=import.meta.env.VITE_STANDALONE_PREVIEW==='true'
 const me=ref<Profile|null>(null)
 const tenantId=ref('')
 const geminiAvailable=ref(false)
@@ -39,7 +39,7 @@ async function signInWithGoogle(token:string){
     if(tenantId.value)await loadWorkspace()
     else view.value='reglas'
   }catch(e){
-    credential.value='';me.value=null;tenantId.value='';preview.value=true
+    credential.value='';me.value=null;tenantId.value='';preview.value=false
     error.value=message(e)
   }finally{busy.value=false}
 }
@@ -217,9 +217,7 @@ async function attachHostContext(token:string){
 }
 function message(e:unknown){return e instanceof Error?e.message:'No fue posible completar la operación'}
 onMounted(async()=>{
-  // Direct standalone access opens the complete product navigation in a
-  // safe, read-only state. Live operations still require signed Smart context.
-  if(previewAvailable && window.parent===window)preview.value=true
+  // Show Google sign-in until a verified Smart host context or Google credential arrives.
   try{
     const c=await fetch(API+'/api/v1/config').then(r=>r.json()) as {gemini_available:boolean;google_client_id?:string}
     geminiAvailable.value=Boolean(c.gemini_available)
@@ -405,23 +403,15 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
 </script>
 
 <template>
-  <div v-if="!credential && !preview" class="auth-page">
-    <div class="auth-card">
-      <div class="brand-mark">S</div>
-      <div class="brand-eyebrow">SMART ALLIANCE</div>
-      <h1>Smart Glosas AI</h1>
-      <p class="access-lead">Inteligencia para prevenir glosas y responder devoluciones con evidencia.</p>
-      <div class="access-capabilities">
-        <div><span class="access-number">01</span><div><strong>Prevenir glosas</strong><small>Revisa cuentas antes de radicar.</small></div></div>
-        <div><span class="access-number">02</span><div><strong>Responder objeciones</strong><small>Prepara contestaciones y subsanaciones sustentadas.</small></div></div>
-      </div>
-      <button v-if="previewAvailable" class="primary access-action" @click="preview=true;error='';view='resumen'">Abrir plataforma <span aria-hidden="true">→</span></button>
-      <GoogleAccess v-if="!me" :client-id="googleClientId" :loading="busy" @credential="signInWithGoogle"/>
-      
-      <div v-if="!ready||busy" class="muted access-status">Conectando con Smart…</div>
-      <div v-if="error" role="alert" class="alert access-status">{{error}}</div>
-      <div class="auth-footer">El acceso operativo se realiza desde la plataforma Smart. No requiere otra cuenta.</div>
-    </div>
+  <div v-if="!credential" class="auth-page">
+    <section class="auth-card" aria-labelledby="login-heading">
+      <img class="auth-brand-logo" :src="SMART_BRAND_LOGO" alt="Smart" />
+      <h1 id="login-heading">Smart Glosas AI</h1>
+      <p class="auth-description">Inicia sesión con tu cuenta Google para acceder a la gestión de glosas y devoluciones.</p>
+      <GoogleAccess :client-id="googleClientId" :loading="busy" @credential="signInWithGoogle" />
+      <div v-if="!ready" class="muted auth-loading">Conectando…</div>
+      <div v-if="error" role="alert" class="alert auth-error">{{error}}</div>
+    </section>
   </div>
 
   <div v-else class="shell">
