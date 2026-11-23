@@ -2,6 +2,7 @@
 import {computed, onMounted, ref} from 'vue'
 import {inspectSyntheticFile, type SyntheticImportResult, type SyntheticObjection} from './syntheticImport'
 import {prepareSyntheticReview, reviewCsv} from './syntheticReview'
+import DemoHistory from './DemoHistory.vue'
 
 type View = 'resumen'|'prevent'|'respond'|'reglas'|'historial'
 type Institute={id:string;name:string;roles:string[]}
@@ -14,6 +15,8 @@ type AIReview={summary:string;suggested_action:string;draft:string|null;missing_
 type DossierFinding={category:string;status:string;message:string;source_ref:string;recommendation:string}
 type DossierDocument={name:string;filename:string|null;state:string;present:boolean}
 type DossierCase={account_ref:string;invoice_ref:string;payer:string;objection_ref:string;objection_code:string;objection_description:string;objection_kind:string;billed_amount:number;objected_amount:number;documents:DossierDocument[];findings:DossierFinding[];status:string}
+type DemoEntry={objection_ref:string;account_ref:string;kind:string;code:string;payer:string;description:string;amount:number;support_state:string;status:'POR_ANALIZAR'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA';findings:DossierFinding[];ai_review:AIReview|null;updated_at:string|null}
+type DemoHistoryData={total:number;progress:number;counts:Record<'POR_ANALIZAR'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA',number>;items:DemoEntry[]}
 
 const API=(import.meta.env.VITE_API_URL||'http://localhost:8080').replace(/\/$/,'')
 const HOST_ORIGIN=import.meta.env.VITE_SMART_HOST_ORIGIN||''
@@ -62,6 +65,47 @@ const syntheticImport=ref<SyntheticImportResult|null>(null)
 const selectedSynthetic=ref<SyntheticObjection|null>(null)
 const syntheticReviewed=ref(false)
 const syntheticEdits=ref<Record<string,string>>({})
+const demoHistory=ref<DemoHistoryData|null>(null)
+const historyBusy=ref(false)
+const historyError=ref('')
+const demoCsvFile=ref<File|null>(null)
+const demoCsvBusy=ref(false)
+async function loadDemoHistory(){
+  if(!preview.value)return
+  historyBusy.value=true;historyError.value=''
+  try{
+    const response=await fetch(API+'/api/v1/clara/synthetic/history',{cache:'no-store'})
+    if(!response.ok)throw Error('No se pudo recuperar el histórico sintético.')
+    demoHistory.value=await response.json() as DemoHistoryData
+  }catch(e){historyError.value=message(e)}finally{historyBusy.value=false}
+}
+function chooseDemoCsv(event:Event){
+  demoCsvFile.value=(event.target as HTMLInputElement).files?.[0]||null
+  historyError.value=''
+}
+async function saveDemoCsv(){
+  if(!demoCsvFile.value)return
+  demoCsvBusy.value=true;historyError.value=''
+  try{
+    const form=new FormData();form.append('file',demoCsvFile.value)
+    const response=await fetch(API+'/api/v1/clara/synthetic/import',{method:'POST',body:form})
+    let result:Record<string,unknown>
+    try{result=await response.json()}catch{result={}}
+    if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'No se pudo guardar el CSV.')
+    await loadDemoHistory()
+    notification.value='Las 40 glosas sintéticas quedaron guardadas en el histórico de pruebas.'
+  }catch(e){historyError.value=message(e)}finally{demoCsvBusy.value=false}
+}
+function openDemoCase(account:string){
+  view.value='respond'
+  if(dossierCases.value.some(x=>x.account_ref===account)){
+    activeDossier.value=account
+  }else{
+    notification.value='Para contrastar la documentación de esta cuenta, carga el ZIP de seis expedientes en la sección de Clara.'
+  }
+  // Bring the real dossier review into view rather than leaving the user in a form.
+  requestAnimationFrame(()=>document.getElementById('clara-dossier')?.scrollIntoView({behavior:'smooth',block:'start'}))
+}
 const dossierFile=ref<File|null>(null)
 const dossierBusy=ref(false)
 const dossierError=ref('')
@@ -87,6 +131,7 @@ async function inspectDossier(){
     const form=new FormData();form.append('file',dossierFile.value)
     const result=await dossierRequest<{accounts:DossierCase[]}>('/api/v1/clara/synthetic/inspect',form)
     dossierCases.value=result.accounts;activeDossier.value=result.accounts[0]?.account_ref||''
+    await loadDemoHistory()
   }catch(e){dossierError.value=message(e)}finally{dossierBusy.value=false}
 }
 async function analyzeDossierWithClara(){
@@ -97,6 +142,7 @@ async function analyzeDossierWithClara(){
     form.append('file',dossierFile.value);form.append('account_ref',activeDossier.value)
     const result=await dossierRequest<{review:AIReview}>('/api/v1/clara/synthetic/ai-review',form)
     dossierReviews.value={...dossierReviews.value,[activeDossier.value]:result.review}
+    await loadDemoHistory()
   }catch(e){dossierError.value=message(e)}finally{dossierBusy.value=false}
 }
 const selectedReview=computed(()=>selectedSynthetic.value&&syntheticReviewed.value?prepareSyntheticReview(selectedSynthetic.value):null)
@@ -169,6 +215,7 @@ onMounted(async()=>{
     geminiAvailable.value=Boolean(c.gemini_available)
   }catch{error.value='No se pudo conectar con Smart Glosas AI.'}
   ready.value=true
+  if(preview.value)await loadDemoHistory()
   window.addEventListener('message',(event:MessageEvent)=>{
     if(!HOST_ORIGIN||event.origin!==HOST_ORIGIN||event.source!==window.parent)return
     if(event.data?.type==='SMART_GLOSAS_CONTEXT'&&typeof event.data.token==='string'){
@@ -401,7 +448,19 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
           </section>
           <section v-else-if="view==='prevent'||view==='respond'">
             <div class="section-intro"><div><span class="eyebrow">{{view==='prevent'?'ANTES DE RADICAR':'DESPUÉS DE LA OBJECIÓN'}}</span><h2>{{view==='prevent'?'Análisis preventivo de cuentas':'Análisis de glosas y devoluciones'}}</h2><p>{{view==='prevent'?'Verifica riesgos con la información disponible. Si falta documentación, el resultado lo indica.':'Analiza causales y evidencia. Las contestaciones requieren revisión y aprobación institucional.'}}</p></div></div>
-            <div class="two-panel">
+            <template v-if="view==='respond'&&preview">
+              <DemoHistory :history="demoHistory" :loading="historyBusy" @open="openDemoCase"/>
+              <div class="demo-upload-sheet">
+                <div><strong>Incorporar glosas al histórico</strong><p>Selecciona el CSV original de 40 casos sintéticos. La carga es idempotente y conserva los estados existentes.</p></div>
+                <label class="upload-box demo-upload-control">
+                  <input type="file" accept=".csv" @change="chooseDemoCsv"/>
+                  <span>{{demoCsvFile?.name||'Seleccionar CSV sintético de 40 glosas'}}</span>
+                </label>
+                <button class="secondary" :disabled="demoCsvBusy||!demoCsvFile" @click="saveDemoCsv">{{demoCsvBusy?'Guardando…':'Guardar en histórico'}}</button>
+              </div>
+              <div v-if="historyError" class="alert">{{historyError}}</div>
+            </template>
+            <div v-if="!preview||view==='prevent'" class="two-panel">
               <div class="sheet">
                 <div class="panel-heading"><h3>Nuevo análisis</h3><span class="subtle-label">Una cuenta</span></div>
                 <div v-if="view==='respond'" class="form-grid">
@@ -489,7 +548,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
                 <div class="helper-note"><b>Control:</b> se conserva la separación entre análisis y envío formal a EPS. Nada se transmite automáticamente.</div>
               </div>
             </div>
-            <div v-if="view==='respond'&&preview" class="sheet dossier-sheet">
+            <div v-if="view==='respond'&&preview" id="clara-dossier" class="sheet dossier-sheet">
               <div class="panel-heading"><h3>Clara · Análisis de expedientes</h3><span class="subtle-label">6 cuentas sintéticas</span></div>
               <p class="muted">Sube el ZIP de Armado de Cuentas para que la plataforma lea los documentos PDF y JSON, detecte diferencias y consulte a Clara con Gemini. Solo se admite el paquete sintético autorizado; no subas información real.</p>
               <div class="dossier-actions">
@@ -558,8 +617,9 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
             </div>
           </section>
           <section v-else-if="view==='historial'">
-            <div class="section-intro row-between"><div><span class="eyebrow">TRAZABILIDAD</span><h2>Seguimiento</h2><p>Histórico de análisis y estados de revisión de esta institución.</p></div><button class="secondary" :disabled="preview" @click="exportHistory">Exportar CSV</button></div>
-            <div class="sheet table-sheet"><table><thead><tr><th>Cuenta</th><th>EPS</th><th>Proceso</th><th>Resultado</th><th>Estado</th><th></th></tr></thead><tbody><tr v-for="row in records" :key="row.id"><td>{{row.account_ref}}</td><td>{{row.payer||'—'}}</td><td>{{row.phase==='PREVENT'?'Preventivo':'Respuesta'}}</td><td>{{statusText(row.summary)}}</td><td>{{row.status==='APPROVED'?'Aprobado':'Por revisar'}}</td><td><button class="text-button" @click="openHistory(row.id)">Abrir</button></td></tr><tr v-if="!records.length"><td colspan="6">Aún no hay análisis registrados.</td></tr></tbody></table></div>
+            <template v-if="preview"><DemoHistory :history="demoHistory" :loading="historyBusy" @open="openDemoCase"/><p v-if="historyError" class="alert">{{historyError}}</p></template>
+            <template v-else><div class="section-intro row-between"><div><span class="eyebrow">TRAZABILIDAD</span><h2>Seguimiento</h2><p>Histórico de análisis y estados de revisión de esta institución.</p></div><button class="secondary" :disabled="preview" @click="exportHistory">Exportar CSV</button></div>
+            <div class="sheet table-sheet"><table><thead><tr><th>Cuenta</th><th>EPS</th><th>Proceso</th><th>Resultado</th><th>Estado</th><th></th></tr></thead><tbody><tr v-for="row in records" :key="row.id"><td>{{row.account_ref}}</td><td>{{row.payer||'—'}}</td><td>{{row.phase==='PREVENT'?'Preventivo':'Respuesta'}}</td><td>{{statusText(row.summary)}}</td><td>{{row.status==='APPROVED'?'Aprobado':'Por revisar'}}</td><td><button class="text-button" @click="openHistory(row.id)">Abrir</button></td></tr><tr v-if="!records.length"><td colspan="6">Aún no hay análisis registrados.</td></tr></tbody></table></div></template>
           </section>
           <section v-else-if="view==='reglas'">
             <div class="section-intro"><span class="eyebrow">MOTOR CONFIGURABLE</span><h2>Reglas de análisis</h2><p>Las condiciones se configuran por institución, pagador, modalidad y servicio. No se generan ni se publican reglas normativas automáticamente.</p></div>
