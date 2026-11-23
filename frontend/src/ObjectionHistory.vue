@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {computed, ref, watch} from 'vue'
 type Status = 'POR_ANALIZAR'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA'
-type Entry = {objection_ref:string;account_ref:string;kind:string;code:string;payer:string;description:string;amount:number;support_state:string;status:Status;findings:Array<{category:string;message:string;source_ref:string}>;ai_review?:{summary:string;suggested_action:string;draft:string|null;missing_information:string[]}|null;updated_at?:string|null}
+type Entry = {objection_ref:string;account_ref:string;kind:string;code:string|null;payer:string|null;description:string;amount:number|null;status:Status;findings:Array<{category:string;message:string;source_ref:string|null}>;ai_review?:{summary:string;suggested_action:string;draft:string|null;missing_information:string[]}|null;updated_at?:string|null}
 type History = {total:number;progress:number;counts:Record<Status,number>;items:Entry[]}
 const props=defineProps<{history:History|null;loading:boolean}>()
 const emit=defineEmits<{open:[string]}>()
@@ -13,7 +13,7 @@ const options=[{value:'TODAS',label:'Todas'},{value:'POR_ANALIZAR',label:'Por an
 const visible=computed(()=>((props.history?.items)||[]).filter(row=>(filter.value==='TODAS'||row.status===filter.value)&&
   [row.objection_ref,row.account_ref,row.code,row.payer].some(v=>String(v||'').toLowerCase().includes(query.value.trim().toLowerCase()))))
 const chosen=computed(()=>props.history?.items.find(x=>x.objection_ref===current.value)||null)
-const money=(n:number)=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(n)
+const money=(n:number|null)=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(n??0)
 watch(()=>props.history?.total,(value)=>{if(!value)current.value=''})
 function show(item:Entry){current.value=item.objection_ref}
 function statusClass(value:Status){return 'track-status '+value.toLowerCase()}
@@ -53,8 +53,8 @@ function statusClass(value:Status){return 'track-status '+value.toLowerCase()}
     </div>
     <div v-if="loading" class="workflow-empty">Consultando el histórico…</div>
     <div v-else-if="!history?.total" class="workflow-empty">
-      <strong>No hay glosas guardadas todavía.</strong>
-      <p>Importa glosas o registra una objeción para comenzar. Los expedientes estarán disponibles aquí.</p>
+      <strong>{{history===null?'Sin institución vinculada':'No hay glosas registradas todavía.'}}</strong>
+      <p>{{history===null?'El histórico se habilita al ingresar desde Smart con una institución autorizada.':'Carga glosas o registra una objeción para comenzar. Los expedientes estarán disponibles aquí.'}}</p>
     </div>
     <div v-else-if="!visible.length" class="workflow-empty">No hay glosas que coincidan con los filtros.</div>
     <div v-else class="workflow-table-scroll">
