@@ -74,11 +74,27 @@ class AuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+
+class ImportBatch(Base):
+    """Metadata for an institution's ingestion; original upload bytes are not retained."""
+    __tablename__ = "import_batches"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=identifier)
+    tenant_id: Mapped[str] = mapped_column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(12), nullable=False)
+    received_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    inserted_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    duplicate_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ObjectionCase(Base):
     """An objection belongs to a single tenant and retains audited workflow history."""
     __tablename__ = "objection_cases"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=identifier)
     tenant_id: Mapped[str] = mapped_column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+    batch_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("import_batches.id", ondelete="SET NULL"), nullable=True, index=True)
     objection_ref: Mapped[str] = mapped_column(String(120), nullable=False)
     account_ref: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     kind: Mapped[str] = mapped_column(String(20), nullable=False)

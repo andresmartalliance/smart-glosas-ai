@@ -81,7 +81,7 @@ def actor(tenant_id: str | None = Header(default=None, alias="X-Tenant-Id"),
         tenant = db.scalar(select(Tenant).where(Tenant.id == tenant_id, Tenant.active.is_(True)))
         if not tenant:
             raise HTTPException(403, "IPS no habilitada en Smart Glosas AI")
-        allowed = frozenset({"ADMIN", "CONFIGURADOR", "AUDITOR", "ANALISTA"})
+        allowed = frozenset({"SUPERADMIN", "ADMIN", "CONFIGURADOR", "AUDITOR", "ANALISTA"})
         granted = frozenset(claims["roles"]) & allowed
         if not granted:
             raise HTTPException(403, "El usuario no tiene un rol autorizado en esta institución")
