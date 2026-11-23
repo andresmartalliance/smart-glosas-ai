@@ -138,7 +138,7 @@ def assist(body: ClaraQuestion, user: Actor = Depends(actor), db: Session = Depe
         "question": redact(question)[:700],
         "objection_counts": {
             key: int(stats.get(key, 0)) for key in
-            ("POR_ANALIZAR", "ANALIZADA", "PROPUESTA", "RESPONDIDA")
+            ("POR_ANALIZAR", "EN_REVISION", "ANALIZADA", "PROPUESTA", "RESPONDIDA")
         },
         "active_rule_count": rules_count,
         "selected_case": {

@@ -12,17 +12,18 @@ from .db import get_db
 from .models import AuditEvent, ObjectionCase, ImportBatch, RuleVersion, Analysis
 from .schemas import ObjectionInput, RuleDefinition
 from .engine import respond
+from .triage import triage_case
 from .gemini import generate_review
 
 router = APIRouter(prefix="/api/v1/objections", tags=["objections"])
-STATES = ("POR_ANALIZAR", "ANALIZADA", "PROPUESTA", "RESPONDIDA")
+STATES = ("POR_ANALIZAR", "EN_REVISION", "ANALIZADA", "PROPUESTA", "RESPONDIDA")
 DELETION_ROLES = frozenset({"ADMIN", "SUPERADMIN"})
 
 def require_data_admin(user: Actor):
     if not user.roles.intersection(DELETION_ROLES):
         raise HTTPException(403, "Se requieren permisos de administración de datos.")
 
-PROGRESS = {"POR_ANALIZAR": 0, "ANALIZADA": 50, "PROPUESTA": 75, "RESPONDIDA": 100}
+PROGRESS = {"POR_ANALIZAR": 0, "EN_REVISION": 20, "ANALIZADA": 50, "PROPUESTA": 75, "RESPONDIDA": 100}
 
 
 def serialize(row: ObjectionCase) -> dict:
@@ -214,27 +215,81 @@ def delete_objection(ref: str, user: Actor = Depends(actor), db: Session = Depen
     db.commit()
     return {"deleted": ref}
 
+@router.post("/triage")
+def triage_pending(user: Actor = Depends(actor), db: Session = Depends(get_db)):
+    """Preliminary classification in one explicit, audited operation.
+
+    A case only advances to EN_REVISION: lacking documents cannot be
+    interpreted as a completed audit, accepted glosa or formal answer.
+    """
+    if not user.roles.intersection({"SUPERADMIN", "ADMIN", "AUDITOR", "ANALISTA"}):
+        raise HTTPException(403, "No tienes permiso para clasificar objeciones.")
+    cases = db.scalars(select(ObjectionCase).where(
+        ObjectionCase.tenant_id == user.tenant_id,
+        ObjectionCase.status == "POR_ANALIZAR"
+    ).order_by(ObjectionCase.created_at).limit(500).with_for_update()).all()
+    by_category = {}
+    for item in cases:
+        findings = triage_case(item)
+        item.findings = findings
+        item.status = "EN_REVISION"
+        item.updated_by = user.email
+        category = findings[0]["category"]
+        by_category[category] = by_category.get(category, 0) + 1
+    if cases:
+        db.add(AuditEvent(
+            tenant_id=user.tenant_id, actor=user.email,
+            action="OBJECTIONS_TRIAGED", subject_id=user.tenant_id,
+            details={"processed": len(cases), "categories": by_category,
+                     "result": "EN_REVISION", "source": "objection_metadata_only"}
+        ))
+    db.commit()
+    pending = db.scalar(select(func.count()).select_from(ObjectionCase).where(
+        ObjectionCase.tenant_id == user.tenant_id,
+        ObjectionCase.status == "POR_ANALIZAR"
+    )) or 0
+    return {
+        "processed": len(cases),
+        "pending": pending,
+        "categories": by_category,
+        "status": "EN_REVISION",
+        "notice": "Clasificación preliminar de causales y soportes por verificar. "
+                  "No representa evaluación documental final ni respuesta a una EPS."
+    }
+
+
 @router.post("/{ref}/analyze")
 def analyze_case(ref: str, user: Actor = Depends(actor), db: Session = Depends(get_db)):
     item = case_for_tenant(db, user.tenant_id, ref)
     if item.status == "RESPONDIDA":
-        raise HTTPException(409, "Una respuesta formal registrada no puede analizarse de nuevo aquí.")
-    from .schemas import ObjectionInput
+        raise HTTPException(409, "No se puede reabrir una respuesta formal desde este análisis.")
+    if item.status == "PROPUESTA":
+        raise HTTPException(409, "Ya existe una propuesta. Revísala antes de ejecutar otro análisis.")
     source = ObjectionInput.model_validate(item.source)
     rows = db.scalars(select(RuleVersion).where(
         RuleVersion.tenant_id == user.tenant_id,
         RuleVersion.active.is_(True))).all()
     rules = [(RuleDefinition.model_validate(r.body), r.version) for r in rows]
     result = respond(source, rules)
-    item.findings = result.get("findings", [])
-    item.status = "ANALIZADA" if result.get("rules_applied") else "POR_ANALIZAR"
+    findings = result.get("findings", [])
+    rules_applied = bool(result.get("rules_applied"))
+    # Metadata-only triage must not disappear when institutional rules need evidence.
+    if not rules_applied:
+        findings = triage_case(item)
+        item.status = "EN_REVISION"
+    elif any(f.get("status") == "INSUFFICIENT" for f in findings) or not source.account.evidence:
+        item.status = "EN_REVISION"
+    else:
+        item.status = "ANALIZADA"
+    item.findings = findings
     item.ai_review = None
     item.updated_by = user.email
     audit(db, user, "OBJECTION_EVALUATED", item,
-          {"summary": result["summary"], "rules": len(result["rules_applied"])})
+          {"summary": result["summary"], "rules": len(result["rules_applied"]),
+           "status": item.status, "documentary_evidence_present": bool(source.account.evidence)})
     db.commit()
     return {"case": serialize(item), "analysis": result,
-            "notice": "No se puede afirmar procedencia sin evidencia y reglas vigentes."}
+            "notice": "Revisión documental inicial. No se establece procedencia ni se envía respuesta."}
 
 
 @router.post("/{ref}/clara")

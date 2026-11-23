@@ -13,8 +13,8 @@ type Summary={id:string;phase:string;account_ref:string;payer:string|null;object
 type Finding={rule_key:string;rule_version:number;status:string;category:string;severity:string;message:string;recommendation:string|null;source_ref:string|null}
 type Analysis={ai_review?:AIReview|null;id:string;status:string;phase:string;account_ref:string;objection_ref?:string;objection_kind?:string;objection_code?:string;summary:string;counts:{review:number;insufficient:number;passed:number};findings:Finding[];response_draft?:string|null;draft_options?:Array<{action:string;text:string;rule_key:string;source_ref:string;supporting_evidence:Array<{id:string;kind:string;reference?:string}>}>;requires_human_review:boolean}
 type AIReview={summary:string;suggested_action:string;draft:string|null;missing_information:string[];warnings:string[];requires_human_review:boolean;model:string}
-type ObjectionEntry={objection_ref:string;account_ref:string;kind:string;code:string|null;payer:string|null;description:string;amount:number|null;status:'POR_ANALIZAR'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA';findings:Array<{category:string;message:string;source_ref:string|null}>;ai_review:AIReview|null;response_reference:string|null;updated_at:string|null}
-type ObjectionHistoryData={total:number;progress:number;counts:Record<'POR_ANALIZAR'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA',number>;items:ObjectionEntry[]}
+type ObjectionEntry={objection_ref:string;account_ref:string;kind:string;code:string|null;payer:string|null;description:string;amount:number|null;status:'POR_ANALIZAR'|'EN_REVISION'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA';findings:Array<{category:string;message:string;source_ref:string|null}>;ai_review:AIReview|null;response_reference:string|null;updated_at:string|null}
+type ObjectionHistoryData={total:number;progress:number;counts:Record<'POR_ANALIZAR'|'EN_REVISION'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA',number>;items:ObjectionEntry[]}
 type ImportBatch={id:string;file_name:string;source_type:string;received_count:number;inserted_count:number;duplicate_count:number;created_by:string;created_at:string|null}
 
 const API=(import.meta.env.VITE_API_URL||'http://localhost:8080').replace(/\/$/,'')
@@ -126,6 +126,21 @@ async function clearAllObjections(){
 }
 const dateLabel=(value:string|null)=>value?new Date(value).toLocaleDateString('es-CO',{year:'numeric',month:'short',day:'2-digit'}):'—'
 const historyBusy=ref(false)
+const triageBusy=ref(false)
+const triageResult=ref('')
+const triageError=ref('')
+async function triagePending(){
+  if(!tenantId.value||triageBusy.value)return
+  triageBusy.value=true;triageResult.value='';triageError.value=''
+  try{
+    const res=await request<{processed:number;pending:number;status:string}>('/api/v1/objections/triage','POST')
+    triageResult.value=res.processed?
+      res.processed+' glosas clasificadas por causal. Revisa los soportes faltantes antes de contestar.':
+      'No quedan glosas por clasificar.'
+    await loadObjections()
+  }catch(e){triageError.value=message(e)}
+  finally{triageBusy.value=false}
+}
 const selectedObjection=ref('')
 const lifecycleBusy=ref(false)
 const lifecycleError=ref('')
@@ -151,8 +166,8 @@ async function analyzeObjection(){
     const result=await request<{analysis:{summary:string;rules_applied:unknown[]}}>(
       '/api/v1/objections/'+encodeURIComponent(selectedObjection.value)+'/analyze','POST')
     lifecycleResult.value=result.analysis.rules_applied.length?
-      'Se ha registrado una evaluación con las reglas vigentes de la institución.':
-      'No hay reglas aplicables: el caso permanece pendiente de análisis.'
+      'Se registró la evaluación de reglas. Verifica los soportes pendientes antes de contestar.':
+      'Se registró la revisión preliminar. Falta documentar el expediente para sustentar una respuesta.'
     await loadObjections()
   }catch(e){lifecycleError.value=message(e)}finally{lifecycleBusy.value=false}
 }
@@ -468,7 +483,9 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
           </section>
           <section v-else-if="view==='prevent'||view==='respond'">
             <div class="section-intro"><div><span class="eyebrow">{{view==='prevent'?'ANTES DE RADICAR':'DESPUÉS DE LA OBJECIÓN'}}</span><h2>{{view==='prevent'?'Análisis preventivo de cuentas':'Análisis de glosas y devoluciones'}}</h2><p>{{view==='prevent'?'Verifica riesgos con la información disponible. Si falta documentación, el resultado lo indica.':'Analiza causales y evidencia. Las contestaciones requieren revisión y aprobación institucional.'}}</p></div></div>
-            <ObjectionHistory v-if="view==='respond'" :history="objectionHistory" :loading="historyBusy" @open="openObjection"/>
+            <ObjectionHistory v-if="view==='respond'" :history="objectionHistory" :loading="historyBusy" :triage-busy="triageBusy" @open="openObjection" @triage="triagePending"/>
+            <p v-if="view==='respond'&&triageResult" class="notice">{{triageResult}}</p>
+            <p v-if="view==='respond'&&triageError" role="alert" class="alert">{{triageError}}</p>
             <div v-if="view==='respond'&&preview" class="workspace-connection">
               <strong>Gestión institucional</strong>
               <p>El historial y la gestión de glosas estarán disponibles al ingresar desde tu plataforma Smart con una institución autorizada.</p>
@@ -567,7 +584,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
             </div>
           </section>
           <section v-else-if="view==='historial'">
-            <ObjectionHistory :history="objectionHistory" :loading="historyBusy" @open="openObjection"/>
+            <ObjectionHistory :history="objectionHistory" :loading="historyBusy" :triage-busy="triageBusy" @open="openObjection" @triage="triagePending"/>
             <div v-if="preview" class="workspace-connection">
               <strong>Histórico institucional</strong>
               <p>Consulta y seguimiento disponibles al ingresar desde Smart con tu institución.</p>

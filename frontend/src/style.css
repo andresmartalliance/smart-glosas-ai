@@ -262,3 +262,15 @@
 .clara-panel-footer button{background:#185fb2;color:#fff;border:0;border-radius:10px;padding:12px;font-size:12px;font-weight:720}
 .clara-panel-footer p{margin-top:10px;font-size:10px;color:#8599ab;line-height:1.5}
 @media(max-width:620px){.clara-launcher{bottom:15px;right:15px}.clara-panel{bottom:0;right:0;width:100vw;height:min(780px,93dvh);border-radius:21px 21px 0 0}.clara-launcher-subtitle{display:none}}
+
+
+/* Initial classification stage, not a completed documental audit */
+.workflow-triage{margin:0 0 18px;display:flex;justify-content:space-between;align-items:center;gap:17px;flex-wrap:wrap;border:1px solid #dce7f5;background:#f6faff;border-radius:14px;padding:16px 18px}
+.workflow-triage>div{flex:1;min-width:210px}
+.workflow-triage strong{display:block;font-size:13px;color:#264d75}
+.workflow-triage p{font-size:11px;color:#6e879f;margin:6px 0 0;line-height:1.5}
+.workflow-triage>.primary{font-size:12px;min-width:210px;white-space:normal}
+.track-status.en_revision{background:#e8f3fd;color:#245d91}
+.workflow-stats{grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}
+@media(max-width:900px){.workflow-stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){.workflow-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}

@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import {computed, ref, watch} from 'vue'
-type Status = 'POR_ANALIZAR'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA'
+type Status = 'POR_ANALIZAR'|'EN_REVISION'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA'
 type Entry = {objection_ref:string;account_ref:string;kind:string;code:string|null;payer:string|null;description:string;amount:number|null;status:Status;findings:Array<{category:string;message:string;source_ref:string|null}>;ai_review?:{summary:string;suggested_action:string;draft:string|null;missing_information:string[]}|null;updated_at?:string|null}
 type History = {total:number;progress:number;counts:Record<Status,number>;items:Entry[]}
-const props=defineProps<{history:History|null;loading:boolean}>()
-const emit=defineEmits<{open:[string]}>()
+const props=defineProps<{history:History|null;loading:boolean;triageBusy?:boolean}>()
+const emit=defineEmits<{open:[string];triage:[]}>()
 const filter=ref('TODAS')
 const query=ref('')
 const current=ref('')
-const labels:Record<Status,string>={POR_ANALIZAR:'Por analizar',ANALIZADA:'Analizada',PROPUESTA:'Propuesta preparada',RESPONDIDA:'Respondida'}
-const options=[{value:'TODAS',label:'Todas'},{value:'POR_ANALIZAR',label:'Por analizar'},{value:'ANALIZADA',label:'Analizadas'},{value:'PROPUESTA',label:'Con propuesta'},{value:'RESPONDIDA',label:'Respondidas'}]
+const labels:Record<Status,string>={POR_ANALIZAR:'Por analizar',EN_REVISION:'En revisión documental',ANALIZADA:'Analizada',PROPUESTA:'Propuesta preparada',RESPONDIDA:'Respondida'}
+const options=[{value:'TODAS',label:'Todas'},{value:'POR_ANALIZAR',label:'Por analizar'},{value:'EN_REVISION',label:'En revisión'},{value:'ANALIZADA',label:'Analizadas'},{value:'PROPUESTA',label:'Con propuesta'},{value:'RESPONDIDA',label:'Respondidas'}]
 const visible=computed(()=>((props.history?.items)||[]).filter(row=>(filter.value==='TODAS'||row.status===filter.value)&&
   [row.objection_ref,row.account_ref,row.code,row.payer].some(v=>String(v||'').toLowerCase().includes(query.value.trim().toLowerCase()))))
 const chosen=computed(()=>props.history?.items.find(x=>x.objection_ref===current.value)||null)
@@ -34,11 +34,12 @@ function statusClass(value:Status){return 'track-status '+value.toLowerCase()}
         <div class="workflow-ring" :style="{'--progress':(history?.progress||0)+'%'}" role="progressbar" :aria-valuenow="history?.progress||0" aria-valuemin="0" aria-valuemax="100" aria-label="Progreso general del proceso">
           <div class="workflow-ring-middle"><strong>{{history===null?'—':history.progress+'%'}}</strong><small>del proceso</small></div>
         </div>
-        <div class="workflow-progress-description"><strong>Avance del ciclo</strong><p>Medido por los estados reales de cada objeción.</p><small>Analizada: 50% · Con propuesta: 75% · Respondida: 100%</small></div>
+        <div class="workflow-progress-description"><strong>Avance del ciclo</strong><p>Según el estado de cada objeción, sin suponer contestaciones enviadas.</p><small>En revisión: 20% · Analizada: 50% · Propuesta: 75% · Respondida: 100%</small></div>
       </div>
       <div class="workflow-stats">
         <div class="workflow-stat"><strong>{{history===null?'—':history.total}}</strong><span>Total</span></div>
         <div class="workflow-stat"><strong>{{history===null?'—':history.counts.POR_ANALIZAR}}</strong><span>Por analizar</span></div>
+        <div class="workflow-stat"><strong>{{history===null?'—':history.counts.EN_REVISION}}</strong><span>En revisión</span></div>
         <div class="workflow-stat"><strong>{{history===null?'—':history.counts.ANALIZADA}}</strong><span>Analizadas</span></div>
         <div class="workflow-stat"><strong>{{history===null?'—':history.counts.PROPUESTA}}</strong><span>Con propuesta</span></div>
         <div class="workflow-stat"><strong>{{history===null?'—':history.counts.RESPONDIDA}}</strong><span>Respondidas</span></div>
@@ -50,6 +51,12 @@ function statusClass(value:Status){return 'track-status '+value.toLowerCase()}
         <input v-model="query" aria-label="Buscar objeciones" placeholder="Buscar cuenta, causal o EPS"/>
         <select v-model="filter" aria-label="Filtrar por estado"><option v-for="f in options" :key="f.value" :value="f.value">{{f.label}}</option></select>
       </div>
+    </div>
+    <div v-if="history?.counts.POR_ANALIZAR" class="workflow-triage">
+      <div><strong>{{history.counts.POR_ANALIZAR}} glosas pendientes de clasificar</strong>
+        <p>Clasifica causales e identifica la información por verificar. Los expedientes no se consideran auditados ni respondidos.</p>
+      </div>
+      <button class="primary" :disabled="loading||triageBusy" @click="emit('triage')">{{triageBusy?'Clasificando…':'Iniciar revisión de pendientes'}}</button>
     </div>
     <div v-if="loading" class="workflow-empty">Consultando el histórico…</div>
     <div v-else-if="!history?.total" class="workflow-empty">
@@ -85,7 +92,7 @@ function statusClass(value:Status){return 'track-status '+value.toLowerCase()}
         <p v-else class="muted">No hay contestación sustentada para aprobar.</p>
       </div>
       <div class="workflow-item-actions">
-        <span class="muted">{{chosen.status==='POR_ANALIZAR'?'Pendiente de contrastar expediente':chosen.status==='ANALIZADA'?'En revisión · puede solicitarse una propuesta':chosen.status==='PROPUESTA'?'Borrador pendiente de auditor':'Respuesta registrada'}}</span>
+        <span class="muted">{{chosen.status==='POR_ANALIZAR'?'Pendiente de clasificar':chosen.status==='EN_REVISION'?'Pendiente de soportes y reglas verificadas':chosen.status==='ANALIZADA'?'En revisión · puede solicitarse una propuesta':chosen.status==='PROPUESTA'?'Borrador pendiente de auditor':'Respuesta registrada'}}</span>
         <button class="secondary" @click="emit('open',chosen.objection_ref)">Abrir con Clara</button>
       </div>
     </div>
