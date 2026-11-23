@@ -74,19 +74,27 @@ class AuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class SyntheticGlosa(Base):
-    """Demonstration data only; never stores patients, documents or real IPS records."""
-    __tablename__ = "synthetic_glosas"
-    objection_ref: Mapped[str] = mapped_column(String(120), primary_key=True)
+class ObjectionCase(Base):
+    """An objection belongs to a single tenant and retains audited workflow history."""
+    __tablename__ = "objection_cases"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=identifier)
+    tenant_id: Mapped[str] = mapped_column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+    objection_ref: Mapped[str] = mapped_column(String(120), nullable=False)
     account_ref: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
-    code: Mapped[str] = mapped_column(String(30), nullable=False)
-    payer: Mapped[str] = mapped_column(String(180), nullable=False, default="")
-    description: Mapped[str] = mapped_column(String(1200), nullable=False, default="")
-    amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    support_state: Mapped[str] = mapped_column(String(40), nullable=False, default="")
-    status: Mapped[str] = mapped_column(String(24), nullable=False, default="POR_ANALIZAR")
+    code: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    payer: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    description: Mapped[str] = mapped_column(String(3000), nullable=False)
+    source: Mapped[dict] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="POR_ANALIZAR")
     findings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     ai_review: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    response_reference: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    response_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    __table_args__ = (UniqueConstraint("tenant_id", "objection_ref", name="uq_objection_tenant_ref"),
+                      Index("ix_objection_tenant_status", "tenant_id", "status"),)
