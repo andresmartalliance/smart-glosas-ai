@@ -12,7 +12,10 @@ import threading
 import time
 import zipfile
 from collections import defaultdict
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from sqlalchemy.orm import Session
+from .db import get_db
+from .synthetic_history import save_dossier_cases, save_clara_review
 from pypdf import PdfReader
 from .gemini import generate_review
 
@@ -212,10 +215,11 @@ def status():
 
 
 @router.post("/synthetic/inspect")
-async def inspect(file: UploadFile = File(...)):
+async def inspect(file: UploadFile = File(...), db: Session = Depends(get_db)):
     z = await _archive(file)
     with z:
         cases = _all_cases(z)
+    save_dossier_cases(db, cases)
     for item in cases:
         item.pop("case_data", None)
     return {"agent": "Clara", "mode": "evidence_checks", "total": len(cases),
@@ -224,7 +228,7 @@ async def inspect(file: UploadFile = File(...)):
 
 
 @router.post("/synthetic/ai-review")
-async def ai_review(request: Request, file: UploadFile = File(...), account_ref: str = Form(...)):
+async def ai_review(request: Request, file: UploadFile = File(...), account_ref: str = Form(...), db: Session = Depends(get_db)):
     z = await _archive(file)
     with z:
         match = next((item for item in _all_cases(z) if item["account_ref"] == account_ref), None)
@@ -235,6 +239,8 @@ async def ai_review(request: Request, file: UploadFile = File(...), account_ref:
     _rate_limit(request.client.host if request.client else "unknown")
     ai = generate_review(match["case_data"])
     ai["agent"] = "Clara"
+    save_dossier_cases(db, [match])
+    save_clara_review(db, match["objection_ref"], ai)
     return {"account_ref": account_ref, "objection_ref": match["objection_ref"],
             "review": ai, "findings": match["findings"],
             "note": "Borrador generado con Gemini sobre hechos sintéticos extraídos del expediente. Revisión humana obligatoria."}
