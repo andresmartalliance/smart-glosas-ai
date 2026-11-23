@@ -73,3 +73,38 @@
 .review-editor textarea{width:100%;margin-top:9px;min-height:280px;line-height:1.6;font-size:12px;font-family:inherit;color:#304863}
 .review-warning{font-size:11px;color:#966239;background:#fff8eb;border:1px solid #f4e7cf;border-radius:10px;padding:13px;line-height:1.7}
 @media(max-width:720px){.synthetic-actions{flex-direction:column;align-items:stretch}.synthetic-actions .primary,.synthetic-actions .secondary{width:100%}}
+
+
+/* Clara evidence-based dossier workflow */
+.dossier-sheet{margin-top:24px;padding:27px}
+.dossier-sheet>.muted{max-width:940px}
+.dossier-actions{display:flex;gap:14px;align-items:center;margin:18px 0 22px}
+.dossier-upload{min-height:78px;flex:1;margin:0}
+.dossier-actions>.primary{white-space:nowrap}
+.dossier-layout{display:grid;grid-template-columns:minmax(190px,.32fr) minmax(0,.68fr);gap:22px;border-top:1px solid #e8edf4;padding-top:23px}
+.dossier-list{display:flex;flex-direction:column;gap:8px;align-items:stretch}
+.dossier-choice{border:1px solid #e2eaf3;background:#fff;border-radius:11px;padding:14px;display:grid;text-align:left;gap:7px;color:#36516d}
+.dossier-choice strong{font-size:12px}
+.dossier-choice span{font-size:11px;color:#2b6bb0}
+.dossier-choice small{font-size:10px;color:#8496a9}
+.dossier-choice.active{background:#edf5ff;border-color:#bad3f2}
+.dossier-content{min-width:0}
+.dossier-content>.panel-heading{margin-bottom:12px}
+.dossier-content>p{font-size:12px;color:#556f8b;line-height:1.65}
+.dossier-mini{display:flex;gap:13px;flex-wrap:wrap;margin:15px 0 23px;font-size:11px;color:#5b7189}
+.dossier-content>h4{font-size:13px;margin:18px 0 11px;color:#24435e}
+.dossier-finding{border:1px solid #e7edf3;background:#fafcff;border-radius:10px;padding:13px;margin:9px 0}
+.dossier-finding strong{font-size:11px;color:#254c78}
+.dossier-finding p{font-size:12px;line-height:1.6;color:#425e7b;margin:7px 0}
+.dossier-finding small{font-size:10px;color:#7d8fa2;word-break:break-word}
+.dossier-files{margin:15px 0;border:1px solid #e6edf3;border-radius:10px;padding:12px}
+.dossier-files summary{font-size:12px;color:#275d96;font-weight:700;cursor:pointer}
+.dossier-file{display:flex;justify-content:space-between;gap:10px;padding:9px 3px;border-top:1px solid #eef2f5;font-size:11px}
+.dossier-file:first-of-type{margin-top:10px}
+.dossier-file small{color:#8899aa}
+.dossier-clara{border-top:1px solid #e7ecf2;margin-top:22px;padding-top:20px}
+.dossier-clara>.panel-heading{margin-bottom:13px}
+.dossier-clara>p{font-size:12px;color:#405b76;line-height:1.8;margin-top:12px}
+.dossier-clara .helper-note{margin-top:18px}
+@media(max-width:850px){.dossier-layout{grid-template-columns:1fr}.dossier-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.dossier-actions{flex-direction:column;align-items:stretch}.dossier-upload{min-height:95px}.dossier-actions>.primary{width:100%}}
+@media(max-width:520px){.dossier-list{grid-template-columns:1fr}.dossier-sheet{padding:17px}.dossier-file{display:grid}}
