@@ -76,6 +76,9 @@ def test_platform_mode_accepts_corporate_google_sso_and_hospital_creation(env, m
         "email": "admin@example.com", "email_verified": True
     } if token == "valid-google-id" and client_id == "corporate-client.apps.googleusercontent.com" else {})
     headers = {"Authorization": "Bearer valid-google-id"}
+    config = client.get("/api/v1/config")
+    assert config.status_code == 200
+    assert config.json()["google_client_id"] == "corporate-client.apps.googleusercontent.com"
     session = client.get("/api/v1/session", headers=headers)
     assert session.status_code == 200, session.text
     assert session.json()["can_create_institution"] is True
