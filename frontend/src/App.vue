@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import {computed, onMounted, ref} from 'vue'
-import {inspectSyntheticFile, type SyntheticImportResult, type SyntheticObjection} from './syntheticImport'
-import {prepareSyntheticReview, reviewCsv} from './syntheticReview'
-import DemoHistory from './DemoHistory.vue'
+import ObjectionHistory from './ObjectionHistory.vue'
 
 type View = 'resumen'|'prevent'|'respond'|'reglas'|'historial'
 type Institute={id:string;name:string;roles:string[]}
@@ -12,11 +10,8 @@ type Summary={id:string;phase:string;account_ref:string;payer:string|null;object
 type Finding={rule_key:string;rule_version:number;status:string;category:string;severity:string;message:string;recommendation:string|null;source_ref:string|null}
 type Analysis={ai_review?:AIReview|null;id:string;status:string;phase:string;account_ref:string;objection_ref?:string;objection_kind?:string;objection_code?:string;summary:string;counts:{review:number;insufficient:number;passed:number};findings:Finding[];response_draft?:string|null;draft_options?:Array<{action:string;text:string;rule_key:string;source_ref:string;supporting_evidence:Array<{id:string;kind:string;reference?:string}>}>;requires_human_review:boolean}
 type AIReview={summary:string;suggested_action:string;draft:string|null;missing_information:string[];warnings:string[];requires_human_review:boolean;model:string}
-type DossierFinding={category:string;status:string;message:string;source_ref:string;recommendation:string}
-type DossierDocument={name:string;filename:string|null;state:string;present:boolean}
-type DossierCase={account_ref:string;invoice_ref:string;payer:string;objection_ref:string;objection_code:string;objection_description:string;objection_kind:string;billed_amount:number;objected_amount:number;documents:DossierDocument[];findings:DossierFinding[];status:string}
-type DemoEntry={objection_ref:string;account_ref:string;kind:string;code:string;payer:string;description:string;amount:number;support_state:string;status:'POR_ANALIZAR'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA';findings:DossierFinding[];ai_review:AIReview|null;updated_at:string|null}
-type DemoHistoryData={total:number;progress:number;counts:Record<'POR_ANALIZAR'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA',number>;items:DemoEntry[]}
+type ObjectionEntry={objection_ref:string;account_ref:string;kind:string;code:string|null;payer:string|null;description:string;amount:number|null;status:'POR_ANALIZAR'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA';findings:Array<{category:string;message:string;source_ref:string|null}>;ai_review:AIReview|null;response_reference:string|null;updated_at:string|null}
+type ObjectionHistoryData={total:number;progress:number;counts:Record<'POR_ANALIZAR'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA',number>;items:ObjectionEntry[]}
 
 const API=(import.meta.env.VITE_API_URL||'http://localhost:8080').replace(/\/$/,'')
 const HOST_ORIGIN=import.meta.env.VITE_SMART_HOST_ORIGIN||''
@@ -61,111 +56,57 @@ const objectionAmount=ref('')
 const respondFacts=ref('{}')
 const respondEvidence=ref('')
 const upload=ref<File|null>(null)
-const syntheticImport=ref<SyntheticImportResult|null>(null)
-const selectedSynthetic=ref<SyntheticObjection|null>(null)
-const syntheticReviewed=ref(false)
-const syntheticEdits=ref<Record<string,string>>({})
-const demoHistory=ref<DemoHistoryData|null>(null)
+const objectionHistory=ref<ObjectionHistoryData|null>(null)
 const historyBusy=ref(false)
-const historyError=ref('')
-const demoCsvFile=ref<File|null>(null)
-const demoCsvBusy=ref(false)
-async function loadDemoHistory(){
-  if(!preview.value)return
-  historyBusy.value=true;historyError.value=''
-  try{
-    const response=await fetch(API+'/api/v1/clara/synthetic/history',{cache:'no-store'})
-    if(!response.ok)throw Error('No se pudo recuperar el histórico sintético.')
-    demoHistory.value=await response.json() as DemoHistoryData
-  }catch(e){historyError.value=message(e)}finally{historyBusy.value=false}
+const selectedObjection=ref('')
+const lifecycleBusy=ref(false)
+const lifecycleError=ref('')
+const lifecycleResult=ref('')
+const responseReference=ref('')
+const selectedEntry=computed(()=>objectionHistory.value?.items.find(item=>item.objection_ref===selectedObjection.value)||null)
+async function loadObjections(){
+  if(!credential.value||!tenantId.value){objectionHistory.value=null;return}
+  historyBusy.value=true
+  try{objectionHistory.value=await request<ObjectionHistoryData>('/api/v1/objections')}
+  finally{historyBusy.value=false}
 }
-function chooseDemoCsv(event:Event){
-  demoCsvFile.value=(event.target as HTMLInputElement).files?.[0]||null
-  historyError.value=''
-}
-async function saveDemoCsv(){
-  if(!demoCsvFile.value)return
-  demoCsvBusy.value=true;historyError.value=''
-  try{
-    const form=new FormData();form.append('file',demoCsvFile.value)
-    const response=await fetch(API+'/api/v1/clara/synthetic/import',{method:'POST',body:form})
-    let result:Record<string,unknown>
-    try{result=await response.json()}catch{result={}}
-    if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'No se pudo guardar el CSV.')
-    await loadDemoHistory()
-    notification.value='Las 40 glosas sintéticas quedaron guardadas en el histórico de pruebas.'
-  }catch(e){historyError.value=message(e)}finally{demoCsvBusy.value=false}
-}
-function openDemoCase(account:string){
+function openObjection(ref:string){
+  selectedObjection.value=ref
   view.value='respond'
-  if(dossierCases.value.some(x=>x.account_ref===account)){
-    activeDossier.value=account
-  }else{
-    notification.value='Para contrastar la documentación de esta cuenta, carga el ZIP de seis expedientes en la sección de Clara.'
-  }
-  // Bring the real dossier review into view rather than leaving the user in a form.
-  requestAnimationFrame(()=>document.getElementById('clara-dossier')?.scrollIntoView({behavior:'smooth',block:'start'}))
+  lifecycleError.value='';lifecycleResult.value=''
+  requestAnimationFrame(()=>document.getElementById('case-workspace')?.scrollIntoView({behavior:'smooth',block:'start'}))
 }
-const dossierFile=ref<File|null>(null)
-const dossierBusy=ref(false)
-const dossierError=ref('')
-const dossierCases=ref<DossierCase[]>([])
-const activeDossier=ref('')
-const dossierReviews=ref<Record<string,AIReview>>({})
-const activeDossierCase=computed(()=>dossierCases.value.find(x=>x.account_ref===activeDossier.value)||null)
-function chooseDossierFile(event:Event){
-  dossierFile.value=(event.target as HTMLInputElement).files?.[0]||null
-  dossierCases.value=[];activeDossier.value='';dossierReviews.value={};dossierError.value=''
-}
-async function dossierRequest<T>(path:string,form:FormData):Promise<T>{
-  const response=await fetch(API+path,{method:'POST',body:form})
-  let data:Record<string,unknown>
-  try{data=await response.json()}catch{data={}}
-  if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'Clara no pudo procesar esta solicitud ('+response.status+')')
-  return data as T
-}
-async function inspectDossier(){
-  if(!dossierFile.value)return
-  dossierBusy.value=true;dossierError.value='';dossierCases.value=[];dossierReviews.value={}
+async function analyzeObjection(){
+  if(!selectedObjection.value)return
+  lifecycleBusy.value=true;lifecycleError.value=''
   try{
-    const form=new FormData();form.append('file',dossierFile.value)
-    const result=await dossierRequest<{accounts:DossierCase[]}>('/api/v1/clara/synthetic/inspect',form)
-    dossierCases.value=result.accounts;activeDossier.value=result.accounts[0]?.account_ref||''
-    await loadDemoHistory()
-  }catch(e){dossierError.value=message(e)}finally{dossierBusy.value=false}
+    const result=await request<{analysis:{summary:string;rules_applied:unknown[]}}>(
+      '/api/v1/objections/'+encodeURIComponent(selectedObjection.value)+'/analyze','POST')
+    lifecycleResult.value=result.analysis.rules_applied.length?
+      'Se ha registrado una evaluación con las reglas vigentes de la institución.':
+      'No hay reglas aplicables: el caso permanece pendiente de análisis.'
+    await loadObjections()
+  }catch(e){lifecycleError.value=message(e)}finally{lifecycleBusy.value=false}
 }
-async function analyzeDossierWithClara(){
-  if(!activeDossier.value||!dossierFile.value)return
-  dossierBusy.value=true;dossierError.value=''
+async function askClaraOnCase(){
+  if(!selectedObjection.value)return
+  lifecycleBusy.value=true;lifecycleError.value=''
   try{
-    const form=new FormData()
-    form.append('file',dossierFile.value);form.append('account_ref',activeDossier.value)
-    const result=await dossierRequest<{review:AIReview}>('/api/v1/clara/synthetic/ai-review',form)
-    dossierReviews.value={...dossierReviews.value,[activeDossier.value]:result.review}
-    await loadDemoHistory()
-  }catch(e){dossierError.value=message(e)}finally{dossierBusy.value=false}
+    await request('/api/v1/objections/'+encodeURIComponent(selectedObjection.value)+'/clara','POST')
+    lifecycleResult.value='Clara registró su evaluación. Revisa los hallazgos y la propuesta antes de continuar.'
+    await loadObjections()
+  }catch(e){lifecycleError.value=message(e)}finally{lifecycleBusy.value=false}
 }
-const selectedReview=computed(()=>selectedSynthetic.value&&syntheticReviewed.value?prepareSyntheticReview(selectedSynthetic.value):null)
-const priorityCount=computed(()=>syntheticReviewed.value&&syntheticImport.value?syntheticImport.value.items.filter(x=>prepareSyntheticReview(x).priority==='ALTA').length:0)
-function analyzeSyntheticBatch(){
-  if(!preview.value||!syntheticImport.value)return
-  syntheticEdits.value=Object.fromEntries(syntheticImport.value.items.map(item=>[item.ref,prepareSyntheticReview(item).draft]))
-  syntheticReviewed.value=true
-  notification.value='Revisión preliminar preparada. Abre las objeciones y verifica los soportes antes de decidir.'
-}
-function exportSyntheticBatch(){
-  if(!preview.value||!syntheticImport.value||!syntheticReviewed.value)return
-  const csv=reviewCsv(syntheticImport.value.items,syntheticEdits.value)
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'})
-  const url=URL.createObjectURL(blob)
-  const anchor=document.createElement('a')
-  anchor.href=url
-  anchor.download='Smart_Glosas_Revision_Preliminar_Sintetica.csv'
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
-  notification.value='Revisión preliminar exportada para validación humana. No se ha enviado nada a una EPS.'
+async function registerObjectionResponse(){
+  if(!selectedObjection.value||!responseReference.value.trim())return
+  lifecycleBusy.value=true;lifecycleError.value=''
+  try{
+    await request('/api/v1/objections/'+encodeURIComponent(selectedObjection.value)+'/register-response',
+      'POST',{reference:responseReference.value.trim()})
+    lifecycleResult.value='Se registró la referencia de respuesta confirmada por auditor.'
+    responseReference.value=''
+    await loadObjections()
+  }catch(e){lifecycleError.value=message(e)}finally{lifecycleBusy.value=false}
 }
 const formatCOP=(value:number)=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(value)
 const fileColumns=ref<string[]>([])
@@ -192,6 +133,7 @@ async function loadWorkspace(){
   if(!tenantId.value)return
   const [r,h]=await Promise.all([request<Rule[]>('/api/v1/rules'),request<Summary[]>('/api/v1/analyses')])
   rules.value=r;records.value=h
+  await loadObjections()
 }
 async function attachHostContext(token:string){
   preview.value=false
@@ -215,7 +157,6 @@ onMounted(async()=>{
     geminiAvailable.value=Boolean(c.gemini_available)
   }catch{error.value='No se pudo conectar con Smart Glosas AI.'}
   ready.value=true
-  if(preview.value)await loadDemoHistory()
   window.addEventListener('message',(event:MessageEvent)=>{
     if(!HOST_ORIGIN||event.origin!==HOST_ORIGIN||event.source!==window.parent)return
     if(event.data?.type==='SMART_GLOSAS_CONTEXT'&&typeof event.data.token==='string'){
@@ -263,11 +204,15 @@ async function runIndividual(phase:'PREVENT'|'RESPOND'){
         amount:objectionAmount.value.trim()?objectionAmount.value.trim():null,
         account:accountFromInputs(phase)}]}
     }
-    const path=phase==='PREVENT'?'/api/v1/analyses/prevent':'/api/v1/analyses/respond'
-    const result=await request<{analyses:Analysis[]}>(path,'POST',payload)
-    recentResults.value=result.analyses
+    if(phase==='RESPOND'){
+      const result=await request<{inserted:number}>('/api/v1/objections/batch','POST',payload)
+      notification.value=result.inserted?'Glosa registrada. Puedes analizarla desde el histórico.':'Esta glosa ya existe en el histórico.'
+    }else{
+      const result=await request<{analyses:Analysis[]}>('/api/v1/analyses/prevent','POST',payload)
+      recentResults.value=result.analyses
+      notification.value='Análisis preventivo registrado.'
+    }
     await loadWorkspace()
-    notification.value='Análisis registrado. Revisa los hallazgos y evidencias.'
   }catch(e){error.value=message(e)}finally{busy.value=false}
 }
 function importTargetFields(phase:'PREVENT'|'RESPOND'){
@@ -277,28 +222,22 @@ function importTargetFields(phase:'PREVENT'|'RESPOND'){
 function selectFile(event:Event,phase:'PREVENT'|'RESPOND'){
   upload.value=(event.target as HTMLInputElement).files?.[0]||null
   importPhase.value=phase;fileColumns.value=[];mapping.value={};importErrors.value=[];importCount.value=0
-  syntheticImport.value=null;selectedSynthetic.value=null;syntheticReviewed.value=false;syntheticEdits.value={};error.value='';notification.value=''
-  if(preview.value&&phase==='RESPOND'&&upload.value)void inspectFile()
+  error.value='';notification.value=''
 }
 async function inspectFile(){
-  if(!upload.value)return
+  if(preview.value||!upload.value)return
   busy.value=true;error.value=''
   try{
-    if(preview.value){
-      if(importPhase.value!=='RESPOND')throw Error('La importación de prueba está habilitada en Responder glosas.')
-      // Parse locally. Do not send uploaded test files to Railway, Gemini or any external service.
-      const parsed=await inspectSyntheticFile(upload.value)
-      syntheticImport.value=parsed
-      selectedSynthetic.value=parsed.items[0]||null
-      syntheticReviewed.value=false;syntheticEdits.value={}
-      notification.value='Archivo leído en este navegador. No se ha enviado ni guardado información.'
-      return
-    }
     const form=new FormData();form.append('file',upload.value)
     const endpoint=importPhase.value==='PREVENT'?'/api/v1/imports/preview':'/api/v1/imports/objections/preview'
     const res=await request<{columns:string[];rows_detected:number}>(endpoint,'POST',form)
     fileColumns.value=res.columns;importCount.value=res.rows_detected
-  }catch(e){syntheticImport.value=null;error.value=message(e)}finally{busy.value=false}
+    const destinations=importTargetFields(importPhase.value)
+    mapping.value=Object.fromEntries(destinations.map(key=>{
+      const match=res.columns.find(col=>col.toLowerCase().trim()===key.toLowerCase())
+      return [key,match||'']
+    }))
+  }catch(e){error.value=message(e)}finally{busy.value=false}
 }
 async function processImport(){
   if(preview.value||!upload.value)return
@@ -311,11 +250,16 @@ async function processImport(){
     const parsed=await request<{rows:unknown[];errors:Array<{row:number;issue:string}>;accepted:number}>(endpoint,'POST',form)
     importErrors.value=parsed.errors
     if(!parsed.accepted)throw Error('Ninguna fila pudo normalizarse. Revisa los campos.')
-    const path=importPhase.value==='PREVENT'?'/api/v1/analyses/prevent':'/api/v1/analyses/respond'
-    const payload=importPhase.value==='PREVENT'?{accounts:parsed.rows}:{objections:parsed.rows}
-    const finished=await request<{analyses:Analysis[]}>(path,'POST',payload)
-    recentResults.value=finished.analyses
-    notification.value=finished.analyses.length+' análisis registrados. '+(parsed.errors.length?'Filas con error: '+parsed.errors.length+'.':'')
+    if(importPhase.value==='RESPOND'){
+      const result=await request<{inserted:number;existing:number}>('/api/v1/objections/batch','POST',{objections:parsed.rows})
+      notification.value=result.inserted+' glosas registradas. '+result.existing+' ya existentes.'+
+        (parsed.errors.length?' Filas por revisar: '+parsed.errors.length+'.':'')
+    }else{
+      const finished=await request<{analyses:Analysis[]}>('/api/v1/analyses/prevent','POST',{accounts:parsed.rows})
+      recentResults.value=finished.analyses
+      notification.value=finished.analyses.length+' cuentas evaluadas.'+
+        (parsed.errors.length?' Filas por revisar: '+parsed.errors.length+'.':'')
+    }
     await loadWorkspace()
   }catch(e){error.value=message(e)}finally{busy.value=false}
 }
@@ -398,8 +342,8 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
         <div><span class="access-number">01</span><div><strong>Prevenir glosas</strong><small>Revisa cuentas antes de radicar.</small></div></div>
         <div><span class="access-number">02</span><div><strong>Responder objeciones</strong><small>Prepara contestaciones y subsanaciones sustentadas.</small></div></div>
       </div>
-      <button v-if="previewAvailable" class="primary access-action" @click="preview=true;error='';view='resumen'">Explorar la plataforma <span aria-hidden="true">→</span></button>
-      <p v-if="previewAvailable" class="access-hint">Recorrido visual sin acceso a información institucional.</p>
+      <button v-if="previewAvailable" class="primary access-action" @click="preview=true;error='';view='resumen'">Abrir plataforma <span aria-hidden="true">→</span></button>
+      
       <div v-if="!ready||busy" class="muted access-status">Conectando con Smart…</div>
       <div v-if="error" role="alert" class="alert access-status">{{error}}</div>
       <div class="auth-footer">El acceso operativo se realiza desde la plataforma Smart. No requiere otra cuenta.</div>
@@ -423,15 +367,15 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
           <select v-if="me?.institutions.length" :value="tenantId" aria-label="Institución activa" @change="selectInstitution(($event.target as HTMLSelectElement).value)">
             <option v-for="t in me.institutions" :key="t.id" :value="t.id">{{t.name}}</option>
           </select>
-          <span v-if="preview" class="session-preview">Recorrido del producto</span>
-          <button v-if="preview" class="text-button" @click="preview=false;view='resumen';error='';notification=''">Salir</button>
+          <span v-if="preview" class="session-preview">Sin institución vinculada</span>
+          
           <span v-if="me?.email" class="session-user">{{me.email}}</span>
         </div>
       </header>
       <div class="page-content">
         <div v-if="error" role="alert" class="alert"><b>Atención</b> {{error}}</div>
         <div v-if="notification" role="status" class="notice">{{notification}}</div>
-        <div v-if="preview" class="preview-banner"><span class="preview-dot"></span><div><b>Explora Smart Glosas AI</b><span>Puedes probar expedientes sintéticos con Clara. Las cuentas reales requieren vinculación segura de una IPS.</span></div></div>
+        
         <section v-if="!tenantId && !preview" class="sheet">
           <h2>Configurar organización</h2>
           <p class="muted">No existe una IPS habilitada para el contexto enviado por Smart. Contacta al administrador.</p>
@@ -448,18 +392,40 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
           </section>
           <section v-else-if="view==='prevent'||view==='respond'">
             <div class="section-intro"><div><span class="eyebrow">{{view==='prevent'?'ANTES DE RADICAR':'DESPUÉS DE LA OBJECIÓN'}}</span><h2>{{view==='prevent'?'Análisis preventivo de cuentas':'Análisis de glosas y devoluciones'}}</h2><p>{{view==='prevent'?'Verifica riesgos con la información disponible. Si falta documentación, el resultado lo indica.':'Analiza causales y evidencia. Las contestaciones requieren revisión y aprobación institucional.'}}</p></div></div>
-            <template v-if="view==='respond'&&preview">
-              <DemoHistory :history="demoHistory" :loading="historyBusy" @open="openDemoCase"/>
-              <div class="demo-upload-sheet">
-                <div><strong>Incorporar glosas al histórico</strong><p>Selecciona el CSV original de 40 casos sintéticos. La carga es idempotente y conserva los estados existentes.</p></div>
-                <label class="upload-box demo-upload-control">
-                  <input type="file" accept=".csv" @change="chooseDemoCsv"/>
-                  <span>{{demoCsvFile?.name||'Seleccionar CSV sintético de 40 glosas'}}</span>
-                </label>
-                <button class="secondary" :disabled="demoCsvBusy||!demoCsvFile" @click="saveDemoCsv">{{demoCsvBusy?'Guardando…':'Guardar en histórico'}}</button>
+            <ObjectionHistory v-if="view==='respond'" :history="objectionHistory" :loading="historyBusy" @open="openObjection"/>
+            <div v-if="view==='respond'&&preview" class="workspace-connection">
+              <strong>Gestión institucional</strong>
+              <p>El historial y la gestión de glosas estarán disponibles al ingresar desde tu plataforma Smart con una institución autorizada.</p>
+            </div>
+            <div v-if="view==='respond'&&selectedEntry" id="case-workspace" class="sheet case-workspace">
+              <div class="panel-heading"><h3>Clara · {{selectedEntry.objection_ref}}</h3>
+                <span class="subtle-label">{{selectedEntry.code||'Sin causal'}}</span></div>
+              <p>{{selectedEntry.description}}</p>
+              <div class="case-meta"><span>Cuenta: {{selectedEntry.account_ref}}</span><span>EPS: {{selectedEntry.payer||'Sin pagador'}}</span></div>
+              <div v-if="selectedEntry.findings?.length" class="case-findings">
+                <div v-for="(finding,i) in selectedEntry.findings" :key="i">
+                  <strong>{{finding.category}}</strong><p>{{finding.message}}</p><small v-if="finding.source_ref">Fuente: {{finding.source_ref}}</small>
+                </div>
               </div>
-              <div v-if="historyError" class="alert">{{historyError}}</div>
-            </template>
+              <div v-if="selectedEntry.ai_review" class="draft">
+                <strong>Clara · Interpretación</strong>
+                <p>{{selectedEntry.ai_review.summary}}</p>
+                <p><b>Tratamiento sugerido:</b> {{selectedEntry.ai_review.suggested_action}}</p>
+                <p v-if="selectedEntry.ai_review.draft">{{selectedEntry.ai_review.draft}}</p>
+                <small>Propuesta para revisión humana. No enviada a la EPS.</small>
+              </div>
+              <div class="case-actions">
+                <button class="secondary" :disabled="lifecycleBusy" @click="analyzeObjection">Evaluar con reglas</button>
+                <button class="primary" :disabled="lifecycleBusy||!geminiAvailable||selectedEntry.status==='POR_ANALIZAR'||selectedEntry.status==='RESPONDIDA'" @click="askClaraOnCase">Consultar a Clara</button>
+              </div>
+              <div v-if="selectedEntry.status==='ANALIZADA'||selectedEntry.status==='PROPUESTA'" class="case-response">
+                <p>Registrar respuesta formal emitida por la institución</p>
+                <input v-model="responseReference" placeholder="Radicado o referencia de envío a la EPS"/>
+                <button class="secondary" :disabled="lifecycleBusy||!responseReference.trim()||!me?.institutions.find(t=>t.id===tenantId)?.roles.some(r=>['ADMIN','AUDITOR'].includes(r))" @click="registerObjectionResponse">Registrar respuesta</button>
+              </div>
+              <p v-if="lifecycleResult" class="notice">{{lifecycleResult}}</p>
+              <p v-if="lifecycleError" class="alert">{{lifecycleError}}</p>
+            </div>
             <div v-if="!preview||view==='prevent'" class="two-panel">
               <div class="sheet">
                 <div class="panel-heading"><h3>Nuevo análisis</h3><span class="subtle-label">Una cuenta</span></div>
@@ -487,112 +453,20 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
                 <div class="panel-footer"><button class="primary" :disabled="busy||preview" @click="runIndividual(view==='prevent'?'PREVENT':'RESPOND')">{{busy?'Analizando…':'Analizar cuenta'}}</button></div>
               </div>
               <div class="sheet">
-                <div class="panel-heading"><h3>Analizar un lote</h3><span class="subtle-label">Hasta 500 registros</span></div>
-                <p class="muted">{{preview?(view==='respond'?'Selecciona el CSV sintético para inspeccionar sus glosas, devoluciones y soportes. Se procesa solo en tu navegador.':'La prevención operativa estará disponible con el contexto seguro de tu IPS.'):'Carga CSV o JSON de tu IPS o EPS. Las columnas se relacionan sin imponer un formato único por pagador.'}}</p>
-                <label class="upload-box" :class="{'upload-disabled':preview&&view==='prevent'}"><input type="file" :disabled="preview&&view==='prevent'" :accept="preview?'.csv':'.csv,.json'" @change="selectFile($event,view==='prevent'?'PREVENT':'RESPOND')"/><span>{{upload?.name|| (preview?'Seleccionar CSV sintético':'Seleccionar archivo CSV o JSON')}}</span></label>
-                <button :disabled="busy||!upload||(preview&&view==='prevent')" class="secondary" @click="inspectFile">{{busy?'Leyendo archivo…':preview?'Volver a leer CSV':'Leer columnas'}}</button>
-                <div v-if="preview&&syntheticImport&&view==='respond'" class="synthetic-results">
-                  <div class="synthetic-head"><strong>Archivo reconocido</strong><small>{{syntheticImport.filename}}</small></div>
-                  <div class="synthetic-metrics">
-                    <div><strong>{{syntheticImport.items.length}}</strong><span>Objeciones</span></div>
-                    <div><strong>{{syntheticImport.glosas}}</strong><span>Glosas</span></div>
-                    <div><strong>{{syntheticImport.devoluciones}}</strong><span>Devoluciones</span></div>
-                    <div><strong>{{syntheticImport.distinctAccounts}}</strong><span>Cuentas</span></div>
-                  </div>
-                  <div class="synthetic-amount">Valor objetado en el archivo <strong>{{formatCOP(syntheticImport.totalAmount)}}</strong></div>
-                  <div class="synthetic-actions">
-                    <button class="primary" v-if="!syntheticReviewed" @click="analyzeSyntheticBatch">Revisar las {{syntheticImport.items.length}} objeciones sin IA</button>
-                    <template v-else>
-                      <span class="review-status">Revisión preliminar · {{priorityCount}} casos prioritarios</span>
-                      <button class="secondary" @click="exportSyntheticBatch">Exportar borradores para revisión</button>
-                    </template>
-                  </div>
-                  <p v-if="syntheticImport.errors.length" class="alert">{{syntheticImport.errors.length}} filas necesitan revisión.</p>
-                  <div class="synthetic-table-wrap"><table class="synthetic-table"><thead><tr><th>Referencia</th><th>Tipo</th><th>Causal</th><th>Valor</th></tr></thead><tbody>
-                    <tr v-for="item in syntheticImport.items" :key="item.ref" :class="{selected:selectedSynthetic?.ref===item.ref}" @click="selectedSynthetic=item">
-                      <td><button type="button" class="text-button" @click.stop="selectedSynthetic=item">{{item.ref}}</button></td><td>{{item.kind==='GLOSA'?'Glosa':'Devolución'}}</td><td>{{item.code}}</td><td>{{formatCOP(item.amount)}}</td>
-                    </tr></tbody></table></div>
-                  <div v-if="selectedSynthetic" class="synthetic-detail">
-                    <div class="panel-heading"><h4>{{selectedSynthetic.ref}} · {{selectedSynthetic.family}}</h4><span class="subtle-label">{{selectedSynthetic.code}}</span></div>
-                    <p>{{selectedSynthetic.description}}</p>
-                    <div><strong>Cuenta:</strong> {{selectedSynthetic.account}}</div>
-                    <div><strong>EPS:</strong> {{selectedSynthetic.payer||'No informada'}}</div>
-                    <div><strong>Soporte:</strong> {{selectedSynthetic.support}}</div>
-                    <template v-if="selectedReview">
-                      <div class="review-section">
-                        <div class="review-heading"><strong>{{selectedReview.actionLabel}}</strong><span :class="['review-priority',selectedReview.priority==='ALTA'?'high':'medium']">{{selectedReview.priority==='ALTA'?'Prioritario':'Revisión normal'}}</span></div>
-                        <p class="review-evidence">Evidencia: {{selectedReview.evidenceState}}</p>
-                        <strong>Documentos e información por verificar</strong>
-                        <ul><li v-for="(gap,i) in selectedReview.needs" :key="i">{{gap}}</li></ul>
-                        <strong>Pasos sugeridos</strong>
-                        <ol><li v-for="(step,i) in selectedReview.steps" :key="i">{{step}}</li></ol>
-                        <label class="review-editor">Borrador editable para el auditor
-                          <textarea rows="14" :value="syntheticEdits[selectedSynthetic.ref]||''" @input="syntheticEdits[selectedSynthetic.ref]=($event.target as HTMLTextAreaElement).value"></textarea>
-                        </label>
-                        <p class="review-warning">{{selectedReview.warning}}</p>
-                      </div>
-                    </template>
-                    <div v-else class="helper-note">Carga reconocida. Pulsa «Revisar las objeciones sin IA» para obtener una clasificación preliminar, información faltante y un borrador interno.</div>
-                  </div>
-                  <p class="muted synthetic-footer">Análisis preliminar local con reglas generales por familia de causal. No verifica documentos o contratos, no sustituye auditoría médica, no almacena datos ni transmite respuestas. Los borradores exportados NO están listos para radicación.</p>
-                </div>
+                <div class="panel-heading"><h3>Importar cuentas u objeciones</h3><span class="subtle-label">Hasta 500 registros</span></div>
+                <p class="muted">Importa un archivo CSV o JSON y relaciona sus columnas con los campos del sistema. Las objeciones quedarán registradas en el histórico institucional.</p>
+                <label class="upload-box"><input type="file" accept=".csv,.json" @change="selectFile($event,view==='prevent'?'PREVENT':'RESPOND')"/><span>{{upload?.name||'Seleccionar CSV o JSON'}}</span></label>
+                <button :disabled="busy||!upload" class="secondary" @click="inspectFile">{{busy?'Leyendo archivo…':'Leer columnas'}}</button>
                 <div v-if="fileColumns.length&&!preview" class="mapping-panel"><div class="panel-heading"><h4>Relacionar campos</h4><small>{{importCount}} registros</small></div>
                   <div class="mapping-fields">
                     <label v-for="key in importTargetFields(importPhase)" :key="key">{{({account_ref:'Cuenta',payer:'EPS',modality:'Modalidad',service_type:'Servicio',issued_on:'Fecha de factura',objection_ref:'Referencia objeción',kind:'Glosa o devolución',description:'Descripción de la objeción',code:'Código de causal',amount:'Valor objetado'} as Record<string,string>)[key]||key}}
                       <select v-model="mapping[key]"><option value="">Sin mapear</option><option v-for="col in fileColumns" :key="col" :value="col">{{col}}</option></select>
                     </label>
                   </div>
-                  <button class="primary" :disabled="busy||preview" @click="processImport">{{busy?'Procesando…':'Analizar registros normalizados'}}</button>
+                  <button class="primary" :disabled="busy||preview" @click="processImport">{{busy?'Procesando…':importPhase==='RESPOND'?'Guardar glosas':'Analizar cuentas'}}</button>
                 </div>
                 <p v-if="importErrors.length" class="alert">{{importErrors.length}} filas no pudieron procesarse. Revisa el archivo y sus campos.</p>
                 <div class="helper-note"><b>Control:</b> se conserva la separación entre análisis y envío formal a EPS. Nada se transmite automáticamente.</div>
-              </div>
-            </div>
-            <div v-if="view==='respond'&&preview" id="clara-dossier" class="sheet dossier-sheet">
-              <div class="panel-heading"><h3>Clara · Análisis de expedientes</h3><span class="subtle-label">6 cuentas sintéticas</span></div>
-              <p class="muted">Sube el ZIP de Armado de Cuentas para que la plataforma lea los documentos PDF y JSON, detecte diferencias y consulte a Clara con Gemini. Solo se admite el paquete sintético autorizado; no subas información real.</p>
-              <div class="dossier-actions">
-                <label class="upload-box dossier-upload">
-                  <input type="file" accept=".zip" @change="chooseDossierFile"/>
-                  <span>{{dossierFile?.name||'Seleccionar ZIP de Armado de Cuentas sintético'}}</span>
-                </label>
-                <button class="primary" :disabled="!dossierFile||dossierBusy" @click="inspectDossier">{{dossierBusy?'Procesando…':'Leer y contrastar expedientes'}}</button>
-              </div>
-              <div v-if="dossierError" class="alert">{{dossierError}}</div>
-              <div v-if="dossierCases.length" class="dossier-layout">
-                <div class="dossier-list" aria-label="Expedientes analizados">
-                  <button v-for="item in dossierCases" :key="item.account_ref" :class="['dossier-choice',{active:activeDossier===item.account_ref}]" @click="activeDossier=item.account_ref">
-                    <strong>{{item.account_ref}}</strong><span>{{item.objection_code}} · {{formatCOP(item.objected_amount)}}</span>
-                    <small>{{item.findings.filter(f=>f.status==='REVIEW').length}} hallazgos por revisar</small>
-                  </button>
-                </div>
-                <div v-if="activeDossierCase" class="dossier-content">
-                  <div class="panel-heading"><h3>{{activeDossierCase.objection_ref}} · {{activeDossierCase.objection_code}}</h3><span class="subtle-label">Revisión humana obligatoria</span></div>
-                  <p>{{activeDossierCase.objection_description}}</p>
-                  <div class="dossier-mini"><span>Factura: {{activeDossierCase.invoice_ref}}</span><span>Objeción: {{formatCOP(activeDossierCase.objected_amount)}}</span></div>
-                  <h4>Hallazgos con fuentes</h4>
-                  <div v-for="(finding,index) in activeDossierCase.findings" :key="index" class="dossier-finding">
-                    <strong>{{finding.category}}</strong><p>{{finding.message}}</p><small>Fuente: {{finding.source_ref}}</small>
-                  </div>
-                  <details class="dossier-files"><summary>Documentos revisados ({{activeDossierCase.documents.filter(d=>d.present).length}})</summary>
-                    <div v-for="(doc,index) in activeDossierCase.documents" :key="index" class="dossier-file">
-                      <span>{{doc.name}}</span><small>{{doc.present?'Encontrado':'No disponible'}} · {{doc.state}}</small>
-                    </div>
-                  </details>
-                  <div class="dossier-clara">
-                    <div class="panel-heading"><h4>Clara · Interpretación con Gemini</h4><span class="subtle-label">{{geminiAvailable?'Gemini configurado':'Gemini no configurado'}}</span></div>
-                    <button class="primary" :disabled="dossierBusy||!geminiAvailable" @click="analyzeDossierWithClara">{{dossierBusy?'Clara está analizando…':'Solicitar análisis a Clara'}}</button>
-                    <template v-if="dossierReviews[activeDossier]">
-                      <p><strong>Análisis:</strong> {{dossierReviews[activeDossier].summary}}</p>
-                      <p><strong>Actuación sugerida:</strong> {{dossierReviews[activeDossier].suggested_action}}</p>
-                      <p v-if="dossierReviews[activeDossier].missing_information.length"><strong>Información por completar:</strong> {{dossierReviews[activeDossier].missing_information.join(' · ')}}</p>
-                      <div v-if="dossierReviews[activeDossier].draft" class="draft"><strong>Propuesta de contestación para auditar</strong><p>{{dossierReviews[activeDossier].draft}}</p></div>
-                      <p v-else class="muted">Clara no puede sustentar una contestación definitiva con las fuentes disponibles.</p>
-                      <p v-if="dossierReviews[activeDossier].warnings.length" class="muted">{{dossierReviews[activeDossier].warnings.join(' · ')}}</p>
-                    </template>
-                    <div class="helper-note">La lectura del ZIP ocurre en la API de prueba, sin almacenamiento. Gemini recibe únicamente los hallazgos resumidos y sus fuentes, no los documentos originales. Clara no aprueba ni envía respuestas a EPS.</div>
-                  </div>
-                </div>
               </div>
             </div>
             <div v-if="recentResults.length" class="results">
@@ -617,9 +491,11 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
             </div>
           </section>
           <section v-else-if="view==='historial'">
-            <template v-if="preview"><DemoHistory :history="demoHistory" :loading="historyBusy" @open="openDemoCase"/><p v-if="historyError" class="alert">{{historyError}}</p></template>
-            <template v-else><div class="section-intro row-between"><div><span class="eyebrow">TRAZABILIDAD</span><h2>Seguimiento</h2><p>Histórico de análisis y estados de revisión de esta institución.</p></div><button class="secondary" :disabled="preview" @click="exportHistory">Exportar CSV</button></div>
-            <div class="sheet table-sheet"><table><thead><tr><th>Cuenta</th><th>EPS</th><th>Proceso</th><th>Resultado</th><th>Estado</th><th></th></tr></thead><tbody><tr v-for="row in records" :key="row.id"><td>{{row.account_ref}}</td><td>{{row.payer||'—'}}</td><td>{{row.phase==='PREVENT'?'Preventivo':'Respuesta'}}</td><td>{{statusText(row.summary)}}</td><td>{{row.status==='APPROVED'?'Aprobado':'Por revisar'}}</td><td><button class="text-button" @click="openHistory(row.id)">Abrir</button></td></tr><tr v-if="!records.length"><td colspan="6">Aún no hay análisis registrados.</td></tr></tbody></table></div></template>
+            <ObjectionHistory :history="objectionHistory" :loading="historyBusy" @open="openObjection"/>
+            <div v-if="preview" class="workspace-connection">
+              <strong>Histórico institucional</strong>
+              <p>Consulta y seguimiento disponibles al ingresar desde Smart con tu institución.</p>
+            </div>
           </section>
           <section v-else-if="view==='reglas'">
             <div class="section-intro"><span class="eyebrow">MOTOR CONFIGURABLE</span><h2>Reglas de análisis</h2><p>Las condiciones se configuran por institución, pagador, modalidad y servicio. No se generan ni se publican reglas normativas automáticamente.</p></div>
