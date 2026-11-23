@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed, onMounted, ref} from 'vue'
 import ObjectionHistory from './ObjectionHistory.vue'
+import ClaraAssistant from './ClaraAssistant.vue'
 import GoogleAccess from './GoogleAccess.vue'
 import {SMART_BRAND_LOGO} from './smartLogo'
 
@@ -655,5 +656,18 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
         </template>
       </div>
     </main>
+    <ClaraAssistant
+      :screen="view"
+      :api="API"
+      :token="credential"
+      :tenant-id="tenantId"
+      :institution="institution?.name||null"
+      :gemini-available="geminiAvailable"
+      :cases="objectionHistory?.items||[]"
+      :summary="objectionHistory"
+      :initial-case="selectedObjection"
+      @navigate="view=$event"
+      @open-case="openObjection"
+    />
   </div>
 </template>

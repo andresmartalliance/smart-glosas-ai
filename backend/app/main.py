@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import router
 from .objections import router as objections_router
+from .clara_assistant import router as clara_assistant_router
 
 app = FastAPI(title="Smart Glosas AI", version="0.5.0")
 origins = [x.strip() for x in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if x.strip()]
@@ -16,3 +17,4 @@ def health():
 
 app.include_router(router)
 app.include_router(objections_router)
+app.include_router(clara_assistant_router)

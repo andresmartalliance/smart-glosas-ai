@@ -212,3 +212,53 @@
   .auth-page .auth-card h1{font-size:29px;letter-spacing:-1px}
   .auth-page .auth-card .auth-description{font-size:14px}
 }
+
+
+/* Clara — single, persistent contextual assistant for every authenticated page */
+.clara-assistant{position:relative;z-index:80}
+.clara-launcher{position:fixed;right:25px;bottom:24px;z-index:82;display:flex;align-items:center;gap:9px;border:1px solid #d2e0ee;border-radius:28px;background:#fff;box-shadow:0 12px 34px rgba(23,51,84,.15);padding:8px 15px 8px 8px;color:#254662;font-size:13px;font-weight:750;min-height:52px}
+.clara-launcher:hover{background:#f4f9ff;box-shadow:0 14px 34px rgba(24,64,114,.18)}
+.clara-emblem,.clara-panel-avatar{background:linear-gradient(145deg,#1a75c6,#174f9b);color:#fff;border-radius:50%;display:grid;place-items:center;font-weight:770}
+.clara-emblem{width:36px;height:36px;font-size:17px}
+.clara-launcher-subtitle{font-size:10px;color:#899aaa;font-weight:500}
+.clara-overlay{position:fixed;inset:0;background:rgba(13,32,55,.23);z-index:85}
+.clara-panel{position:fixed;z-index:86;right:21px;bottom:84px;width:min(435px,calc(100vw - 30px));height:min(715px,calc(100dvh - 102px));background:#fff;border:1px solid #dfe6ee;border-radius:20px;box-shadow:0 22px 80px rgba(14,35,59,.22);overflow:hidden;display:flex;flex-direction:column}
+.clara-panel-header{height:72px;padding:15px 18px;border-bottom:1px solid #e8edf4;display:flex;justify-content:space-between;align-items:center;gap:10px;flex:none;background:#fff}
+.clara-panel-identity{display:flex;align-items:center;gap:12px}
+.clara-panel-avatar{width:42px;height:42px;font-size:20px}
+.clara-panel-identity strong{display:block;font-size:15px;letter-spacing:-.2px;color:#203d5c}
+.clara-panel-identity small{display:block;font-size:10px;color:#8396ab;margin-top:4px}
+.clara-close{border:none;background:transparent;font-size:25px;line-height:1;color:#7c90a5;min-width:30px;min-height:35px}
+.clara-panel-main{overflow-y:auto;flex:1;min-height:0;padding:17px 19px;display:flex;flex-direction:column;gap:15px}
+.clara-context{border:1px solid #e2ecf7;border-radius:13px;padding:15px;background:#f6faff}
+.clara-context>span{font-size:10px;color:#3570b1;font-weight:780;letter-spacing:.5px}
+.clara-context p{font-size:12px;color:#3d5e81;line-height:1.6;margin:8px 0}
+.clara-context small{font-size:11px;color:#8094aa}
+.clara-mini-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.clara-mini-metrics>div{border:1px solid #e9eef4;background:#fafbfd;border-radius:10px;padding:10px;display:grid;gap:5px;text-align:center}
+.clara-mini-metrics strong{font-size:18px;color:#1e4f81;font-variant-numeric:tabular-nums}
+.clara-mini-metrics span{font-size:10px;color:#7c8fa2}
+.clara-case-row label{font-size:11px;color:#496984;font-weight:650}
+.clara-case-picker{display:flex;gap:8px;align-items:center;margin-top:6px}
+.clara-case-picker select{flex:1;min-width:0}
+.clara-open-case{border:1px solid #bdd5ed;background:#eaf4ff;color:#2b6095;border-radius:10px;padding:10px 13px;font-size:12px;font-weight:700}
+.clara-actions{display:flex;gap:7px;flex-wrap:wrap}
+.clara-actions button{border:1px solid #e0e9f2;background:#fff;color:#496b8b;border-radius:9px;padding:9px;font-size:11px;font-weight:650}
+.clara-actions button:hover{background:#f2f8fe}
+.clara-questions p{font-size:11px;color:#667f98;font-weight:740;margin-bottom:9px}
+.clara-questions button{width:100%;display:block;text-align:left;font-size:12px;line-height:1.5;background:#f8fafc;border:1px solid #e7edf5;border-radius:10px;padding:11px;color:#315b82;margin:6px 0}
+.clara-questions button:hover{background:#ecf5ff}
+.clara-conversation{display:grid;gap:10px}
+.clara-message{max-width:95%;padding:12px 14px;border-radius:13px;background:#f4f7fb;color:#385470}
+.clara-message.user{justify-self:end;background:#e8f2ff}
+.clara-message.assistant{justify-self:start}
+.clara-message small{font-size:10px;color:#6f87a0;font-weight:750}
+.clara-message p{font-size:12px;white-space:pre-wrap;margin-top:5px;line-height:1.65;overflow-wrap:anywhere}
+.clara-pending{font-size:11px;color:#627f9b}
+.clara-error{font-size:11px;color:#a23d3d;background:#fff1f0;padding:11px;border:1px solid #f3d4d1;border-radius:9px}
+.clara-panel-footer{flex:none;padding:13px 18px 15px;border-top:1px solid #e8edf4;background:#fff}
+.clara-panel-footer form{display:flex;gap:9px;align-items:flex-end}
+.clara-panel-footer textarea{flex:1;resize:none;min-height:64px;font-size:12px;line-height:1.4}
+.clara-panel-footer button{background:#185fb2;color:#fff;border:0;border-radius:10px;padding:12px;font-size:12px;font-weight:720}
+.clara-panel-footer p{margin-top:10px;font-size:10px;color:#8599ab;line-height:1.5}
+@media(max-width:620px){.clara-launcher{bottom:15px;right:15px}.clara-panel{bottom:0;right:0;width:100vw;height:min(780px,93dvh);border-radius:21px 21px 0 0}.clara-launcher-subtitle{display:none}}
