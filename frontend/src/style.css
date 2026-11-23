@@ -107,3 +107,29 @@
 .case-response p{width:100%;font-size:12px;color:#496784;font-weight:650}
 .case-response input{flex:1;min-width:220px}
 @media(max-width:650px){.case-workspace{padding:16px}.case-response{flex-direction:column;align-items:stretch}}
+
+
+/* Institution-scoped administrative import management */
+.import-admin{margin-top:24px;padding:26px}
+.import-admin>.panel-heading{align-items:center}
+.import-admin .panel-heading p{margin-top:5px;font-size:12px}
+.import-admin-section{margin-top:20px}
+.import-admin-section>.panel-heading{margin-bottom:11px}
+.import-admin-section h4,.import-reset h4{font-size:13px;color:#294762}
+.import-admin-row{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:15px 0;border-top:1px solid #e9eef3;min-height:70px}
+.import-admin-file{display:grid;gap:6px;min-width:0}
+.import-admin-file strong{font-size:12px;color:#2d506f;overflow-wrap:anywhere}
+.import-admin-file small{font-size:11px;color:#8698aa}
+.import-admin-confirm{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.import-admin-confirm span{font-size:11px;color:#924c2e}
+.admin-danger{background:#9d3438;color:#fff;border:1px solid #9d3438;border-radius:10px;padding:10px 14px;font-weight:650;cursor:pointer}
+.admin-danger:hover{background:#872b30}
+.admin-danger:disabled{opacity:.45;cursor:default}
+.import-reset{display:flex;align-items:flex-start;gap:20px;justify-content:space-between;flex-wrap:wrap;background:#fbf9f8;border:1px solid #f0e4df;border-radius:13px;padding:18px;margin-top:20px}
+.import-reset>div:first-child{flex:1;min-width:240px}
+.import-reset p{font-size:11px;color:#7c7d81;line-height:1.6;margin-top:7px}
+.import-reset-confirm{width:100%;display:grid;gap:12px}
+.import-reset-confirm p{margin:0}
+.import-reset-confirm input{max-width:280px}
+.import-reset-confirm>div{display:flex;gap:9px;flex-wrap:wrap}
+@media(max-width:700px){.import-admin{padding:16px}.import-admin-row{align-items:flex-start;flex-direction:column}}

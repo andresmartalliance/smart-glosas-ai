@@ -12,6 +12,7 @@ type Analysis={ai_review?:AIReview|null;id:string;status:string;phase:string;acc
 type AIReview={summary:string;suggested_action:string;draft:string|null;missing_information:string[];warnings:string[];requires_human_review:boolean;model:string}
 type ObjectionEntry={objection_ref:string;account_ref:string;kind:string;code:string|null;payer:string|null;description:string;amount:number|null;status:'POR_ANALIZAR'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA';findings:Array<{category:string;message:string;source_ref:string|null}>;ai_review:AIReview|null;response_reference:string|null;updated_at:string|null}
 type ObjectionHistoryData={total:number;progress:number;counts:Record<'POR_ANALIZAR'|'ANALIZADA'|'PROPUESTA'|'RESPONDIDA',number>;items:ObjectionEntry[]}
+type ImportBatch={id:string;file_name:string;source_type:string;received_count:number;inserted_count:number;duplicate_count:number;created_by:string;created_at:string|null}
 
 const API=(import.meta.env.VITE_API_URL||'http://localhost:8080').replace(/\/$/,'')
 const HOST_ORIGIN=import.meta.env.VITE_SMART_HOST_ORIGIN||''
@@ -29,7 +30,8 @@ const busy=ref(false)
 const records=ref<Summary[]>([])
 const rules=ref<Rule[]>([])
 const recentResults=ref<Analysis[]>([])
-const canWriteRules=computed(()=>me.value?.institutions.find(t=>t.id===tenantId.value)?.roles.some(r=>['ADMIN','CONFIGURADOR'].includes(r))||false)
+const canWriteRules=computed(()=>me.value?.institutions.find(t=>t.id===tenantId.value)?.roles.some(r=>['SUPERADMIN','ADMIN','CONFIGURADOR'].includes(r))||false)
+const canManageData=computed(()=>me.value?.institutions.find(t=>t.id===tenantId.value)?.roles.some(r=>['SUPERADMIN','ADMIN'].includes(r))||false)
 const institution=computed(()=>me.value?.institutions.find(t=>t.id===tenantId.value))
 const nav:{id:View;label:string;num:string}[]=[
   {id:'resumen',label:'Inicio',num:'01'},
@@ -57,6 +59,37 @@ const respondFacts=ref('{}')
 const respondEvidence=ref('')
 const upload=ref<File|null>(null)
 const objectionHistory=ref<ObjectionHistoryData|null>(null)
+const imports=ref<ImportBatch[]>([])
+const importAdminBusy=ref(false)
+const importAdminError=ref('')
+const importToDelete=ref<string|null>(null)
+const resetArmed=ref(false)
+const resetPhrase=ref('')
+async function loadImports(){
+  if(!canManageData.value){imports.value=[];return}
+  imports.value=await request<ImportBatch[]>('/api/v1/objections/batches')
+}
+async function deleteUploadedBatch(id:string){
+  if(!canManageData.value||importToDelete.value!==id)return
+  importAdminBusy.value=true;importAdminError.value=''
+  try{
+    const result=await request<{deleted:number}>('/api/v1/objections/batches/'+encodeURIComponent(id),'DELETE')
+    importToDelete.value=null
+    await Promise.all([loadObjections(),loadImports()])
+    notification.value='Carga eliminada: '+result.deleted+' glosas asociadas. El resto de la institución no se modificó.'
+  }catch(e){importAdminError.value=message(e)}finally{importAdminBusy.value=false}
+}
+async function clearAllObjections(){
+  if(!canManageData.value||!resetArmed.value||resetPhrase.value!=='ELIMINAR TODO')return
+  importAdminBusy.value=true;importAdminError.value=''
+  try{
+    const r=await request<{deleted_cases:number;deleted_batches:number}>('/api/v1/objections/reset','POST',{confirmation:resetPhrase.value})
+    resetArmed.value=false;resetPhrase.value='';importToDelete.value=null;selectedObjection.value=''
+    await Promise.all([loadObjections(),loadImports()])
+    notification.value='Glosas de la institución eliminadas: '+r.deleted_cases+' casos y '+r.deleted_batches+' cargas. Las reglas y la auditoría se conservan.'
+  }catch(e){importAdminError.value=message(e)}finally{importAdminBusy.value=false}
+}
+const dateLabel=(value:string|null)=>value?new Date(value).toLocaleDateString('es-CO',{year:'numeric',month:'short',day:'2-digit'}):'—'
 const historyBusy=ref(false)
 const selectedObjection=ref('')
 const lifecycleBusy=ref(false)
@@ -134,6 +167,7 @@ async function loadWorkspace(){
   const [r,h]=await Promise.all([request<Rule[]>('/api/v1/rules'),request<Summary[]>('/api/v1/analyses')])
   rules.value=r;records.value=h
   await loadObjections()
+  await loadImports()
 }
 async function attachHostContext(token:string){
   preview.value=false
@@ -251,7 +285,9 @@ async function processImport(){
     importErrors.value=parsed.errors
     if(!parsed.accepted)throw Error('Ninguna fila pudo normalizarse. Revisa los campos.')
     if(importPhase.value==='RESPOND'){
-      const result=await request<{inserted:number;existing:number}>('/api/v1/objections/batch','POST',{objections:parsed.rows})
+      const result=await request<{inserted:number;existing:number}>('/api/v1/objections/batch','POST',{
+        objections:parsed.rows,file_name:upload.value.name,source_type:upload.value.name.toLowerCase().endsWith('.json')?'JSON':'CSV'
+      })
       notification.value=result.inserted+' glosas registradas. '+result.existing+' ya existentes.'+
         (parsed.errors.length?' Filas por revisar: '+parsed.errors.length+'.':'')
     }else{
@@ -525,6 +561,42 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
               </details>
               <div class="panel-footer"><button class="primary" :disabled="busy" @click="createRule">Guardar regla versionada</button></div>
             </div></div>
+
+            <div v-if="canManageData" class="sheet import-admin">
+              <div class="panel-heading">
+                <div><h3>Administración de datos</h3><p class="muted">Gestiona las cargas de glosas de {{institution?.name||'esta institución'}}.</p></div>
+                <span class="subtle-label">Acceso administrador</span>
+              </div>
+              <p v-if="importAdminError" role="alert" class="alert">{{importAdminError}}</p>
+              <div class="import-admin-section">
+                <div class="panel-heading"><h4>Cargas de glosas</h4><span class="subtle-label">{{imports.length}} registradas</span></div>
+                <p v-if="!imports.length" class="muted">No existen cargas de glosas en esta institución.</p>
+                <div v-for="item in imports" :key="item.id" class="import-admin-row">
+                  <div class="import-admin-file">
+                    <strong>{{item.file_name}}</strong>
+                    <small>{{dateLabel(item.created_at)}} · {{item.inserted_count}} glosas incorporadas · {{item.duplicate_count}} omitidas</small>
+                  </div>
+                  <button v-if="importToDelete!==item.id" class="secondary small-button" :disabled="importAdminBusy" @click="importToDelete=item.id;resetArmed=false">Eliminar carga</button>
+                  <div v-else class="import-admin-confirm">
+                    <span>¿Eliminar las {{item.inserted_count}} glosas de esta carga?</span>
+                    <button class="secondary small-button" :disabled="importAdminBusy" @click="importToDelete=null">Cancelar</button>
+                    <button class="admin-danger small-button" :disabled="importAdminBusy" @click="deleteUploadedBatch(item.id)">Confirmar eliminación</button>
+                  </div>
+                </div>
+              </div>
+              <div class="import-reset">
+                <div><h4>Vaciar historial de glosas</h4><p>Elimina las objeciones, respuestas y cargas de esta institución. No afecta las reglas, otras IPS ni la auditoría.</p></div>
+                <button v-if="!resetArmed" class="secondary small-button" :disabled="importAdminBusy" @click="resetArmed=true;importToDelete=null">Vaciar glosas</button>
+                <div v-else class="import-reset-confirm">
+                  <p>Esta acción no se puede deshacer. Escribe <strong>ELIMINAR TODO</strong> para confirmar.</p>
+                  <input v-model="resetPhrase" placeholder="ELIMINAR TODO" autocomplete="off" aria-label="Confirmar vaciado de glosas"/>
+                  <div>
+                    <button class="secondary small-button" :disabled="importAdminBusy" @click="resetArmed=false;resetPhrase=''">Cancelar</button>
+                    <button class="admin-danger small-button" :disabled="importAdminBusy||resetPhrase!=='ELIMINAR TODO'" @click="clearAllObjections">Eliminar todas las glosas</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </section>
         </template>
       </div>
