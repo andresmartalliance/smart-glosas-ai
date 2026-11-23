@@ -13,7 +13,7 @@ const options=[{value:'TODAS',label:'Todas'},{value:'POR_ANALIZAR',label:'Por an
 const visible=computed(()=>((props.history?.items)||[]).filter(row=>(filter.value==='TODAS'||row.status===filter.value)&&
   [row.objection_ref,row.account_ref,row.code,row.payer].some(v=>String(v||'').toLowerCase().includes(query.value.trim().toLowerCase()))))
 const chosen=computed(()=>props.history?.items.find(x=>x.objection_ref===current.value)||null)
-const money=(n:number|null)=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(n??0)
+const money=(n:number|null)=>n===null?'—':new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(n)
 watch(()=>props.history?.total,(value)=>{if(!value)current.value=''})
 function show(item:Entry){current.value=item.objection_ref}
 function statusClass(value:Status){return 'track-status '+value.toLowerCase()}
@@ -32,16 +32,16 @@ function statusClass(value:Status){return 'track-status '+value.toLowerCase()}
     <div class="workflow-summary">
       <div class="workflow-progress">
         <div class="workflow-ring" :style="{'--progress':(history?.progress||0)+'%'}" role="progressbar" :aria-valuenow="history?.progress||0" aria-valuemin="0" aria-valuemax="100" aria-label="Progreso general del proceso">
-          <div class="workflow-ring-middle"><strong>{{history?.progress||0}}%</strong><small>del proceso</small></div>
+          <div class="workflow-ring-middle"><strong>{{history===null?'—':history.progress+'%'}}</strong><small>del proceso</small></div>
         </div>
         <div class="workflow-progress-description"><strong>Avance del ciclo</strong><p>Medido por los estados reales de cada objeción.</p><small>Analizada: 50% · Con propuesta: 75% · Respondida: 100%</small></div>
       </div>
       <div class="workflow-stats">
-        <div class="workflow-stat"><strong>{{history?.total||0}}</strong><span>Total</span></div>
-        <div class="workflow-stat"><strong>{{history?.counts.POR_ANALIZAR||0}}</strong><span>Por analizar</span></div>
-        <div class="workflow-stat"><strong>{{history?.counts.ANALIZADA||0}}</strong><span>Analizadas</span></div>
-        <div class="workflow-stat"><strong>{{history?.counts.PROPUESTA||0}}</strong><span>Con propuesta</span></div>
-        <div class="workflow-stat"><strong>{{history?.counts.RESPONDIDA||0}}</strong><span>Respondidas</span></div>
+        <div class="workflow-stat"><strong>{{history===null?'—':history.total}}</strong><span>Total</span></div>
+        <div class="workflow-stat"><strong>{{history===null?'—':history.counts.POR_ANALIZAR}}</strong><span>Por analizar</span></div>
+        <div class="workflow-stat"><strong>{{history===null?'—':history.counts.ANALIZADA}}</strong><span>Analizadas</span></div>
+        <div class="workflow-stat"><strong>{{history===null?'—':history.counts.PROPUESTA}}</strong><span>Con propuesta</span></div>
+        <div class="workflow-stat"><strong>{{history===null?'—':history.counts.RESPONDIDA}}</strong><span>Respondidas</span></div>
       </div>
     </div>
     <div class="workflow-table-head">
@@ -63,7 +63,7 @@ function statusClass(value:Status){return 'track-status '+value.toLowerCase()}
         <tbody>
           <tr v-for="item in visible" :key="item.objection_ref" :class="{selected:current===item.objection_ref}">
             <td><strong>{{item.objection_ref}}</strong><small>{{item.account_ref}} · {{item.kind==='DEVOLUCION'?'Devolución':'Glosa'}}</small></td>
-            <td>{{item.payer}}</td><td>{{item.code}}</td><td>{{money(item.amount)}}</td>
+            <td>{{item.payer}}</td><td>{{item.code||'—'}}</td><td>{{money(item.amount)}}</td>
             <td><span :class="statusClass(item.status)">{{labels[item.status]||item.status}}</span></td>
             <td><button class="text-button" @click="show(item)">Ver detalle</button></td>
           </tr>
