@@ -26,7 +26,7 @@ def read_rows(data: bytes, filename: str):
             if isinstance(payload, list):
                 rows = payload
             elif isinstance(payload, dict):
-                rows = payload.get("accounts", [])
+                rows = payload.get("accounts", payload.get("objections", []))
             else:
                 raise ValueError("JSON must contain an accounts array")
             keys = sorted({key for row in rows if isinstance(row, dict) for key in row})
