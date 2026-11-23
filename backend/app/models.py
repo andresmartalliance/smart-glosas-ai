@@ -72,3 +72,21 @@ class AuditEvent(Base):
     subject_id: Mapped[str] = mapped_column(String(36), nullable=False)
     details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SyntheticGlosa(Base):
+    """Demonstration data only; never stores patients, documents or real IPS records."""
+    __tablename__ = "synthetic_glosas"
+    objection_ref: Mapped[str] = mapped_column(String(120), primary_key=True)
+    account_ref: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    code: Mapped[str] = mapped_column(String(30), nullable=False)
+    payer: Mapped[str] = mapped_column(String(180), nullable=False, default="")
+    description: Mapped[str] = mapped_column(String(1200), nullable=False, default="")
+    amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    support_state: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="POR_ANALIZAR")
+    findings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    ai_review: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
