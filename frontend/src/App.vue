@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import {computed, onMounted, ref} from 'vue'
+import {computed, nextTick, onMounted, ref, watch} from 'vue'
 import ObjectionHistory from './ObjectionHistory.vue'
+
+declare global {interface Window {google?: {accounts: {id: {initialize:(opts:{client_id:string;callback:(reply:{credential:string})=>void})=>void;renderButton:(node:HTMLElement,opts:Record<string,string>)=>void}}}}}
 
 type View = 'resumen'|'prevent'|'respond'|'reglas'|'historial'
 type Institute={id:string;name:string;roles:string[]}
@@ -23,6 +25,65 @@ const previewAvailable=import.meta.env.VITE_STANDALONE_PREVIEW==='true'
 const me=ref<Profile|null>(null)
 const tenantId=ref('')
 const geminiAvailable=ref(false)
+const googleClientId=ref('')
+const googleButton=ref<HTMLElement|null>(null)
+const creatingInstitution=ref(false)
+const newInstitutionName=ref('')
+let googleReadyForClient=''
+function renderGoogleSignIn(){
+  if(!googleClientId.value||!googleButton.value||!window.google?.accounts?.id)return
+  if(googleReadyForClient!==googleClientId.value){
+    window.google.accounts.id.initialize({client_id:googleClientId.value,
+      callback:({credential})=>{void signInWithGoogle(credential)}})
+    googleReadyForClient=googleClientId.value
+  }
+  googleButton.value.replaceChildren()
+  window.google.accounts.id.renderButton(googleButton.value,{
+    theme:'outline',size:'medium',shape:'pill',text:'signin_with',logo_alignment:'left'
+  })
+}
+watch([googleClientId,googleButton],renderGoogleSignIn)
+function loadGoogleSignIn(){
+  if(!googleClientId.value)return
+  if(window.google?.accounts?.id){renderGoogleSignIn();return}
+  const script=document.createElement('script')
+  script.src='https://accounts.google.com/gsi/client'
+  script.async=true
+  script.defer=true
+  script.onload=()=>renderGoogleSignIn()
+  script.onerror=()=>{error.value='No fue posible cargar el acceso con Google. Revisa la conexión.'}
+  document.head.appendChild(script)
+}
+async function signInWithGoogle(token:string){
+  if(!token)return
+  busy.value=true;error.value=''
+  try{
+    credential.value=token
+    const user=await request<Profile>('/api/v1/session')
+    me.value=user
+    tenantId.value=user.institutions[0]?.id||''
+    preview.value=false
+    if(tenantId.value)await loadWorkspace()
+    else view.value='reglas'
+  }catch(e){
+    credential.value='';me.value=null;tenantId.value='';preview.value=true
+    error.value=message(e)
+  }finally{busy.value=false}
+}
+async function createInstitution(){
+  if(!me.value?.can_create_institution||!newInstitutionName.value.trim())return
+  creatingInstitution.value=true;error.value=''
+  try{
+    const tenant=await request<{id:string;name:string}>('/api/v1/institutions','POST',{name:newInstitutionName.value.trim()})
+    const profile=await request<Profile>('/api/v1/session')
+    me.value=profile;tenantId.value=tenant.id
+    newInstitutionName.value=''
+    view.value='reglas'
+    await loadWorkspace()
+    notification.value='Hospital o IPS creado: '+tenant.name+'.'
+  }catch(e){error.value=message(e)}
+  finally{creatingInstitution.value=false}
+}
 const ready=ref(false)
 const error=ref('')
 const notification=ref('')
@@ -187,8 +248,11 @@ onMounted(async()=>{
   // safe, read-only state. Live operations still require signed Smart context.
   if(previewAvailable && window.parent===window)preview.value=true
   try{
-    const c=await fetch(API+'/api/v1/config').then(r=>r.json()) as {gemini_available:boolean}
+    const c=await fetch(API+'/api/v1/config').then(r=>r.json()) as {gemini_available:boolean;google_client_id?:string}
     geminiAvailable.value=Boolean(c.gemini_available)
+    googleClientId.value=c.google_client_id||''
+    await nextTick()
+    loadGoogleSignIn()
   }catch{error.value='No se pudo conectar con Smart Glosas AI.'}
   ready.value=true
   window.addEventListener('message',(event:MessageEvent)=>{
@@ -259,7 +323,8 @@ function selectFile(event:Event,phase:'PREVENT'|'RESPOND'){
   error.value='';notification.value=''
 }
 async function inspectFile(){
-  if(preview.value||!upload.value)return
+  if(!upload.value)return
+  if(!credential.value||!tenantId.value){error.value='Para importar archivos, accede con tu cuenta corporativa de Google y selecciona una institución.';return}
   busy.value=true;error.value=''
   try{
     const form=new FormData();form.append('file',upload.value)
@@ -274,7 +339,8 @@ async function inspectFile(){
   }catch(e){error.value=message(e)}finally{busy.value=false}
 }
 async function processImport(){
-  if(preview.value||!upload.value)return
+  if(!upload.value)return
+  if(!credential.value||!tenantId.value){error.value='Accede con Google para guardar las objeciones en el histórico de tu institución.';return}
   busy.value=true;error.value='';notification.value=''
   try{
     const form=new FormData();form.append('file',upload.value)
@@ -379,6 +445,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
         <div><span class="access-number">02</span><div><strong>Responder objeciones</strong><small>Prepara contestaciones y subsanaciones sustentadas.</small></div></div>
       </div>
       <button v-if="previewAvailable" class="primary access-action" @click="preview=true;error='';view='resumen'">Abrir plataforma <span aria-hidden="true">→</span></button>
+      <div v-if="googleClientId&&!me" ref="googleButton" class="google-auth-slot"></div>
       
       <div v-if="!ready||busy" class="muted access-status">Conectando con Smart…</div>
       <div v-if="error" role="alert" class="alert access-status">{{error}}</div>
@@ -403,7 +470,8 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
           <select v-if="me?.institutions.length" :value="tenantId" aria-label="Institución activa" @change="selectInstitution(($event.target as HTMLSelectElement).value)">
             <option v-for="t in me.institutions" :key="t.id" :value="t.id">{{t.name}}</option>
           </select>
-          <span v-if="preview" class="session-preview">Sin institución vinculada</span>
+          <div v-if="preview&&googleClientId" ref="googleButton" class="google-auth-slot"></div>
+          <span v-if="preview&&!googleClientId" class="session-preview">Sin institución vinculada</span>
           
           <span v-if="me?.email" class="session-user">{{me.email}}</span>
         </div>
@@ -412,9 +480,16 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
         <div v-if="error" role="alert" class="alert"><b>Atención</b> {{error}}</div>
         <div v-if="notification" role="status" class="notice">{{notification}}</div>
         
-        <section v-if="!tenantId && !preview" class="sheet">
-          <h2>Configurar organización</h2>
-          <p class="muted">No existe una IPS habilitada para el contexto enviado por Smart. Contacta al administrador.</p>
+        <section v-if="!tenantId&&!preview" class="sheet institution-onboarding">
+          <h2>Hospitales e IPS</h2>
+          <template v-if="me?.can_create_institution">
+            <p class="muted">Crea el hospital o IPS para comenzar su configuración.</p>
+            <form class="institution-form" @submit.prevent="createInstitution">
+              <label>Nombre de la institución<input v-model="newInstitutionName" placeholder="Nombre del hospital o IPS" required maxlength="200"/></label>
+              <button class="primary" type="submit" :disabled="creatingInstitution||!newInstitutionName.trim()">{{creatingInstitution?'Guardando…':'Crear institución'}}</button>
+            </form>
+          </template>
+          <p v-else class="muted">No tienes una institución asignada. Solicita acceso al administrador de Smart.</p>
         </section>
         <template v-else>
           <section v-if="view==='resumen'">
@@ -462,7 +537,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
               <p v-if="lifecycleResult" class="notice">{{lifecycleResult}}</p>
               <p v-if="lifecycleError" class="alert">{{lifecycleError}}</p>
             </div>
-            <div v-if="!preview||view==='prevent'" class="two-panel">
+            <div class="two-panel">
               <div class="sheet">
                 <div class="panel-heading"><h3>Nuevo análisis</h3><span class="subtle-label">Una cuenta</span></div>
                 <div v-if="view==='respond'" class="form-grid">
@@ -493,7 +568,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
                 <p class="muted">Importa un archivo CSV o JSON y relaciona sus columnas con los campos del sistema. Las objeciones quedarán registradas en el histórico institucional.</p>
                 <label class="upload-box"><input type="file" accept=".csv,.json" @change="selectFile($event,view==='prevent'?'PREVENT':'RESPOND')"/><span>{{upload?.name||'Seleccionar CSV o JSON'}}</span></label>
                 <button :disabled="busy||!upload" class="secondary" @click="inspectFile">{{busy?'Leyendo archivo…':'Leer columnas'}}</button>
-                <div v-if="fileColumns.length&&!preview" class="mapping-panel"><div class="panel-heading"><h4>Relacionar campos</h4><small>{{importCount}} registros</small></div>
+                <div v-if="fileColumns.length" class="mapping-panel"><div class="panel-heading"><h4>Relacionar campos</h4><small>{{importCount}} registros</small></div>
                   <div class="mapping-fields">
                     <label v-for="key in importTargetFields(importPhase)" :key="key">{{({account_ref:'Cuenta',payer:'EPS',modality:'Modalidad',service_type:'Servicio',issued_on:'Fecha de factura',objection_ref:'Referencia objeción',kind:'Glosa o devolución',description:'Descripción de la objeción',code:'Código de causal',amount:'Valor objetado'} as Record<string,string>)[key]||key}}
                       <select v-model="mapping[key]"><option value="">Sin mapear</option><option v-for="col in fileColumns" :key="col" :value="col">{{col}}</option></select>
@@ -562,6 +637,21 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
               <div class="panel-footer"><button class="primary" :disabled="busy" @click="createRule">Guardar regla versionada</button></div>
             </div></div>
 
+            <div v-if="me" class="sheet hospital-admin">
+              <div class="panel-heading">
+                <div><h3>Hospitales e IPS</h3><p class="muted">Instituciones habilitadas para tu cuenta.</p></div>
+                <span class="subtle-label">{{me.institutions.length}} registradas</span>
+              </div>
+              <div class="hospital-admin-list">
+                <div v-for="t in me.institutions" :key="t.id" class="hospital-admin-item">
+                  <strong>{{t.name}}</strong><small>{{t.roles.includes('SUPERADMIN')?'Superadministrador':t.roles.includes('ADMIN')?'Administrador':'Miembro autorizado'}}</small>
+                </div>
+              </div>
+              <form v-if="me.can_create_institution" class="institution-form" @submit.prevent="createInstitution">
+                <label>Agregar hospital o IPS<input v-model="newInstitutionName" placeholder="Nombre de la institución" maxlength="200" required/></label>
+                <button class="primary" type="submit" :disabled="creatingInstitution||!newInstitutionName.trim()">{{creatingInstitution?'Creando…':'Crear institución'}}</button>
+              </form>
+            </div>
             <div v-if="canManageData" class="sheet import-admin">
               <div class="panel-heading">
                 <div><h3>Administración de datos</h3><p class="muted">Gestiona las cargas de glosas de {{institution?.name||'esta institución'}}.</p></div>

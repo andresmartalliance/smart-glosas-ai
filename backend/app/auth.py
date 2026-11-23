@@ -52,9 +52,23 @@ class Actor:
     tenant_id: str
     roles: frozenset[str]
 
+def optional_platform_claims(authorization: str | None) -> dict | None:
+    """Accept verified host context; other bearer tokens must pass Google verification."""
+    if os.getenv("SMART_AUTH_MODE", "google") != "platform":
+        return None
+    try:
+        return platform_claims(authorization)
+    except HTTPException as exc:
+        if exc.status_code != 401:
+            raise
+        return None
+
+
 def current_email(authorization: str | None = Header(default=None)) -> str:
-    if os.getenv("SMART_AUTH_MODE", "google") == "platform":
-        return str(platform_claims(authorization)["sub"]).strip().lower()
+    claims = optional_platform_claims(authorization)
+    if claims:
+        return str(claims["sub"]).strip().lower()
+    # Google SSO uses the same corporate identity when the Smart host is not embedded.
     client_id = os.getenv("SMART_GOOGLE_CLIENT_ID", "").strip()
     if not client_id:
         raise HTTPException(status_code=503, detail="Inicio de sesión Google no configurado")
@@ -74,8 +88,8 @@ def current_email(authorization: str | None = Header(default=None)) -> str:
 def actor(tenant_id: str | None = Header(default=None, alias="X-Tenant-Id"),
           email: str = Depends(current_email), db: Session = Depends(get_db),
           authorization: str | None = Header(default=None)) -> Actor:
-    if os.getenv("SMART_AUTH_MODE", "google") == "platform":
-        claims = platform_claims(authorization)
+    claims = optional_platform_claims(authorization)
+    if claims:
         if tenant_id != claims["tenant_id"]:
             raise HTTPException(403, "El contexto de IPS no coincide con el firmado por Smart")
         tenant = db.scalar(select(Tenant).where(Tenant.id == tenant_id, Tenant.active.is_(True)))

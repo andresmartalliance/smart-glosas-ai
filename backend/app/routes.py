@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Uploa
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
-from .auth import Actor, current_email, actor, require_admin, platform_claims
+from .auth import Actor, current_email, actor, require_admin, platform_claims, optional_platform_claims
 from .db import get_db
 from .models import Tenant, Membership, RuleVersion, MappingProfile, Analysis, AuditEvent
 from .schemas import (TenantInput, RuleDefinition, MappingDefinition,
@@ -32,15 +32,26 @@ def active_rules(db: Session, tenant_id: str):
 @router.get("/config")
 def config():
     return {"auth_mode": os.getenv("SMART_AUTH_MODE", "google"),
+            "google_client_id": os.getenv("SMART_GOOGLE_CLIENT_ID", "").strip(),
             "gemini_available": bool(os.getenv("GEMINI_API_KEY", "").strip()),
             "product": "Smart Glosas AI", "agent": "Clara", "ai_provider": "gemini", "version": "0.4.0",
             "autonomous_submission": False}
 
+def can_create_tenant(email: str, db: Session) -> bool:
+    """Bootstrap owners and existing superadmins can provision organizations."""
+    configured = {x.strip().lower() for x in os.getenv("SMART_GLOSAS_BOOTSTRAP_EMAILS", "").split(",") if x.strip()}
+    if email in configured:
+        return True
+    memberships = db.scalars(select(Membership).where(
+        Membership.email == email, Membership.active.is_(True))).all()
+    return any("SUPERADMIN" in (m.roles or []) for m in memberships)
+
+
 @router.get("/session")
 def session(email: str = Depends(current_email), db: Session = Depends(get_db),
             authorization: str | None = Header(default=None)):
-    if os.getenv("SMART_AUTH_MODE", "google") == "platform":
-        claims = platform_claims(authorization)
+    claims = optional_platform_claims(authorization)
+    if claims:
         tenant = db.scalar(select(Tenant).where(Tenant.id == claims["tenant_id"], Tenant.active.is_(True)))
         if tenant is None and "ADMIN" in claims["roles"] and isinstance(claims.get("tenant_name"), str):
             name = claims["tenant_name"].strip()[:200]
@@ -57,19 +68,20 @@ def session(email: str = Depends(current_email), db: Session = Depends(get_db),
     names = {t.id: t.name for t in db.scalars(select(Tenant).where(Tenant.id.in_([m.tenant_id for m in memberships]))).all()}
     return {"email": email,
             "institutions": [{"id": m.tenant_id, "name": names[m.tenant_id], "roles": m.roles} for m in memberships],
-            "can_create_institution": os.getenv("APP_ENV", "development") == "development"
-            and email in {x.strip().lower() for x in os.getenv("SMART_GLOSAS_BOOTSTRAP_EMAILS", "").split(",")}}
+            "can_create_institution": can_create_tenant(email, db)}
 
 @router.post("/institutions", status_code=201)
-def create_institution(body: TenantInput, email: str = Depends(current_email), db: Session = Depends(get_db)):
-    if os.getenv("SMART_AUTH_MODE", "google") == "platform":
-        raise HTTPException(403, "Las IPS se provisionan desde la plataforma Smart")
-    permitted = {x.strip().lower() for x in os.getenv("SMART_GLOSAS_BOOTSTRAP_EMAILS", "").split(",") if x.strip()}
-    if os.getenv("APP_ENV", "development") != "development" or email not in permitted:
-        raise HTTPException(403, "Creación de instituciones no habilitada para esta cuenta")
+def create_institution(body: TenantInput, email: str = Depends(current_email), db: Session = Depends(get_db),
+                       authorization: str | None = Header(default=None)):
+    # Host-issued institution contexts may only provision themselves via the Smart host.
+    if optional_platform_claims(authorization):
+        raise HTTPException(403, "Esta sesión administra instituciones desde la plataforma Smart")
+    if not can_create_tenant(email, db):
+        raise HTTPException(403, "No tienes permiso para crear hospitales o IPS")
     tenant = Tenant(name=body.name.strip())
     db.add(tenant); db.flush()
-    db.add(Membership(tenant_id=tenant.id, email=email, roles=["ADMIN", "CONFIGURADOR", "AUDITOR"]))
+    db.add(Membership(tenant_id=tenant.id, email=email,
+                      roles=["SUPERADMIN", "ADMIN", "CONFIGURADOR", "AUDITOR"]))
     db.add(AuditEvent(tenant_id=tenant.id, actor=email, action="TENANT_CREATED", subject_id=tenant.id, details={}))
     db.commit()
     return {"id": tenant.id, "name": tenant.name}

@@ -61,3 +61,30 @@ def test_ai_keeps_drafts_human_reviewed(monkeypatch):
     assert no_sources["agent"] == "Clara" and no_sources["provider"] == "gemini"
     sourced=generate_review({"phase":"RESPOND","findings":[{"status":"REVIEW","source_ref":"Referencia verificable"}]})
     assert sourced["draft"]=="Borrador de prueba"
+
+
+def test_platform_mode_accepts_corporate_google_sso_and_hospital_creation(env, monkeypatch):
+    """The user can work directly from the web without an insecure parallel login."""
+    client, _ = env
+    monkeypatch.setenv("SMART_AUTH_MODE", "platform")
+    monkeypatch.setenv("SMART_PLATFORM_JWT_SECRET", SECRET)
+    monkeypatch.setenv("SMART_GOOGLE_CLIENT_ID", "corporate-client.apps.googleusercontent.com")
+    monkeypatch.setenv("SMART_GLOSAS_BOOTSTRAP_EMAILS", "admin@example.com")
+    app.dependency_overrides.pop(current_email, None)
+    from google.oauth2 import id_token
+    monkeypatch.setattr(id_token, "verify_oauth2_token", lambda token, request, client_id: {
+        "email": "admin@example.com", "email_verified": True
+    } if token == "valid-google-id" and client_id == "corporate-client.apps.googleusercontent.com" else {})
+    headers = {"Authorization": "Bearer valid-google-id"}
+    session = client.get("/api/v1/session", headers=headers)
+    assert session.status_code == 200, session.text
+    assert session.json()["can_create_institution"] is True
+    created = client.post("/api/v1/institutions", headers=headers, json={"name": "Hospital Nuevo"})
+    assert created.status_code == 201, created.text
+    tenant_id = created.json()["id"]
+    session2 = client.get("/api/v1/session", headers=headers).json()
+    assert any(t["id"] == tenant_id and "SUPERADMIN" in t["roles"]
+               for t in session2["institutions"])
+    assert client.get("/api/v1/objections", headers={**headers,"X-Tenant-Id":tenant_id}).status_code == 200
+    assert client.post("/api/v1/institutions", headers={"Authorization":"Bearer bad-platform-token"},
+                       json={"name":"No autorizado"}).status_code == 401
