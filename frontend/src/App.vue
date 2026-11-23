@@ -11,6 +11,9 @@ type Summary={id:string;phase:string;account_ref:string;payer:string|null;object
 type Finding={rule_key:string;rule_version:number;status:string;category:string;severity:string;message:string;recommendation:string|null;source_ref:string|null}
 type Analysis={ai_review?:AIReview|null;id:string;status:string;phase:string;account_ref:string;objection_ref?:string;objection_kind?:string;objection_code?:string;summary:string;counts:{review:number;insufficient:number;passed:number};findings:Finding[];response_draft?:string|null;draft_options?:Array<{action:string;text:string;rule_key:string;source_ref:string;supporting_evidence:Array<{id:string;kind:string;reference?:string}>}>;requires_human_review:boolean}
 type AIReview={summary:string;suggested_action:string;draft:string|null;missing_information:string[];warnings:string[];requires_human_review:boolean;model:string}
+type DossierFinding={category:string;status:string;message:string;source_ref:string;recommendation:string}
+type DossierDocument={name:string;filename:string|null;state:string;present:boolean}
+type DossierCase={account_ref:string;invoice_ref:string;payer:string;objection_ref:string;objection_code:string;objection_description:string;objection_kind:string;billed_amount:number;objected_amount:number;documents:DossierDocument[];findings:DossierFinding[];status:string}
 
 const API=(import.meta.env.VITE_API_URL||'http://localhost:8080').replace(/\/$/,'')
 const HOST_ORIGIN=import.meta.env.VITE_SMART_HOST_ORIGIN||''
@@ -59,6 +62,43 @@ const syntheticImport=ref<SyntheticImportResult|null>(null)
 const selectedSynthetic=ref<SyntheticObjection|null>(null)
 const syntheticReviewed=ref(false)
 const syntheticEdits=ref<Record<string,string>>({})
+const dossierFile=ref<File|null>(null)
+const dossierBusy=ref(false)
+const dossierError=ref('')
+const dossierCases=ref<DossierCase[]>([])
+const activeDossier=ref('')
+const dossierReviews=ref<Record<string,AIReview>>({})
+const activeDossierCase=computed(()=>dossierCases.value.find(x=>x.account_ref===activeDossier.value)||null)
+function chooseDossierFile(event:Event){
+  dossierFile.value=(event.target as HTMLInputElement).files?.[0]||null
+  dossierCases.value=[];activeDossier.value='';dossierReviews.value={};dossierError.value=''
+}
+async function dossierRequest<T>(path:string,form:FormData):Promise<T>{
+  const response=await fetch(API+path,{method:'POST',body:form})
+  let data:Record<string,unknown>
+  try{data=await response.json()}catch{data={}}
+  if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'Clara no pudo procesar esta solicitud ('+response.status+')')
+  return data as T
+}
+async function inspectDossier(){
+  if(!dossierFile.value)return
+  dossierBusy.value=true;dossierError.value='';dossierCases.value=[];dossierReviews.value={}
+  try{
+    const form=new FormData();form.append('file',dossierFile.value)
+    const result=await dossierRequest<{accounts:DossierCase[]}>('/api/v1/clara/synthetic/inspect',form)
+    dossierCases.value=result.accounts;activeDossier.value=result.accounts[0]?.account_ref||''
+  }catch(e){dossierError.value=message(e)}finally{dossierBusy.value=false}
+}
+async function analyzeDossierWithClara(){
+  if(!activeDossier.value||!dossierFile.value)return
+  dossierBusy.value=true;dossierError.value=''
+  try{
+    const form=new FormData()
+    form.append('file',dossierFile.value);form.append('account_ref',activeDossier.value)
+    const result=await dossierRequest<{review:AIReview}>('/api/v1/clara/synthetic/ai-review',form)
+    dossierReviews.value={...dossierReviews.value,[activeDossier.value]:result.review}
+  }catch(e){dossierError.value=message(e)}finally{dossierBusy.value=false}
+}
 const selectedReview=computed(()=>selectedSynthetic.value&&syntheticReviewed.value?prepareSyntheticReview(selectedSynthetic.value):null)
 const priorityCount=computed(()=>syntheticReviewed.value&&syntheticImport.value?syntheticImport.value.items.filter(x=>prepareSyntheticReview(x).priority==='ALTA').length:0)
 function analyzeSyntheticBatch(){
@@ -344,7 +384,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
       <div class="page-content">
         <div v-if="error" role="alert" class="alert"><b>Atención</b> {{error}}</div>
         <div v-if="notification" role="status" class="notice">{{notification}}</div>
-        <div v-if="preview" class="preview-banner"><span class="preview-dot"></span><div><b>Explora Smart Glosas AI</b><span>Las pantallas están disponibles para conocer el producto. El análisis de cuentas se habilita al vincular una IPS.</span></div></div>
+        <div v-if="preview" class="preview-banner"><span class="preview-dot"></span><div><b>Explora Smart Glosas AI</b><span>Puedes probar expedientes sintéticos con Clara. Las cuentas reales requieren vinculación segura de una IPS.</span></div></div>
         <section v-if="!tenantId && !preview" class="sheet">
           <h2>Configurar organización</h2>
           <p class="muted">No existe una IPS habilitada para el contexto enviado por Smart. Contacta al administrador.</p>
@@ -447,6 +487,53 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
                 </div>
                 <p v-if="importErrors.length" class="alert">{{importErrors.length}} filas no pudieron procesarse. Revisa el archivo y sus campos.</p>
                 <div class="helper-note"><b>Control:</b> se conserva la separación entre análisis y envío formal a EPS. Nada se transmite automáticamente.</div>
+              </div>
+            </div>
+            <div v-if="view==='respond'&&preview" class="sheet dossier-sheet">
+              <div class="panel-heading"><h3>Clara · Análisis de expedientes</h3><span class="subtle-label">6 cuentas sintéticas</span></div>
+              <p class="muted">Sube el ZIP de Armado de Cuentas para que la plataforma lea los documentos PDF y JSON, detecte diferencias y consulte a Clara con Gemini. Solo se admite el paquete sintético autorizado; no subas información real.</p>
+              <div class="dossier-actions">
+                <label class="upload-box dossier-upload">
+                  <input type="file" accept=".zip" @change="chooseDossierFile"/>
+                  <span>{{dossierFile?.name||'Seleccionar ZIP de Armado de Cuentas sintético'}}</span>
+                </label>
+                <button class="primary" :disabled="!dossierFile||dossierBusy" @click="inspectDossier">{{dossierBusy?'Procesando…':'Leer y contrastar expedientes'}}</button>
+              </div>
+              <div v-if="dossierError" class="alert">{{dossierError}}</div>
+              <div v-if="dossierCases.length" class="dossier-layout">
+                <div class="dossier-list" aria-label="Expedientes analizados">
+                  <button v-for="item in dossierCases" :key="item.account_ref" :class="['dossier-choice',{active:activeDossier===item.account_ref}]" @click="activeDossier=item.account_ref">
+                    <strong>{{item.account_ref}}</strong><span>{{item.objection_code}} · {{formatCOP(item.objected_amount)}}</span>
+                    <small>{{item.findings.filter(f=>f.status==='REVIEW').length}} hallazgos por revisar</small>
+                  </button>
+                </div>
+                <div v-if="activeDossierCase" class="dossier-content">
+                  <div class="panel-heading"><h3>{{activeDossierCase.objection_ref}} · {{activeDossierCase.objection_code}}</h3><span class="subtle-label">Revisión humana obligatoria</span></div>
+                  <p>{{activeDossierCase.objection_description}}</p>
+                  <div class="dossier-mini"><span>Factura: {{activeDossierCase.invoice_ref}}</span><span>Objeción: {{formatCOP(activeDossierCase.objected_amount)}}</span></div>
+                  <h4>Hallazgos con fuentes</h4>
+                  <div v-for="(finding,index) in activeDossierCase.findings" :key="index" class="dossier-finding">
+                    <strong>{{finding.category}}</strong><p>{{finding.message}}</p><small>Fuente: {{finding.source_ref}}</small>
+                  </div>
+                  <details class="dossier-files"><summary>Documentos revisados ({{activeDossierCase.documents.filter(d=>d.present).length}})</summary>
+                    <div v-for="(doc,index) in activeDossierCase.documents" :key="index" class="dossier-file">
+                      <span>{{doc.name}}</span><small>{{doc.present?'Encontrado':'No disponible'}} · {{doc.state}}</small>
+                    </div>
+                  </details>
+                  <div class="dossier-clara">
+                    <div class="panel-heading"><h4>Clara · Interpretación con Gemini</h4><span class="subtle-label">{{geminiAvailable?'Gemini configurado':'Gemini no configurado'}}</span></div>
+                    <button class="primary" :disabled="dossierBusy||!geminiAvailable" @click="analyzeDossierWithClara">{{dossierBusy?'Clara está analizando…':'Solicitar análisis a Clara'}}</button>
+                    <template v-if="dossierReviews[activeDossier]">
+                      <p><strong>Análisis:</strong> {{dossierReviews[activeDossier].summary}}</p>
+                      <p><strong>Actuación sugerida:</strong> {{dossierReviews[activeDossier].suggested_action}}</p>
+                      <p v-if="dossierReviews[activeDossier].missing_information.length"><strong>Información por completar:</strong> {{dossierReviews[activeDossier].missing_information.join(' · ')}}</p>
+                      <div v-if="dossierReviews[activeDossier].draft" class="draft"><strong>Propuesta de contestación para auditar</strong><p>{{dossierReviews[activeDossier].draft}}</p></div>
+                      <p v-else class="muted">Clara no puede sustentar una contestación definitiva con las fuentes disponibles.</p>
+                      <p v-if="dossierReviews[activeDossier].warnings.length" class="muted">{{dossierReviews[activeDossier].warnings.join(' · ')}}</p>
+                    </template>
+                    <div class="helper-note">La lectura del ZIP ocurre en la API de prueba, sin almacenamiento. Gemini recibe únicamente los hallazgos resumidos y sus fuentes, no los documentos originales. Clara no aprueba ni envía respuestas a EPS.</div>
+                  </div>
+                </div>
               </div>
             </div>
             <div v-if="recentResults.length" class="results">
