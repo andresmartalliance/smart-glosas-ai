@@ -71,6 +71,8 @@ def current_email(authorization: str | None = Header(default=None)) -> str:
     # Google SSO uses the same corporate identity when the Smart host is not embedded.
     client_id = os.getenv("SMART_GOOGLE_CLIENT_ID", "").strip()
     if not client_id:
+        if os.getenv("SMART_AUTH_MODE", "google") == "platform":
+            raise HTTPException(status_code=401, detail="Contexto de Smart inválido o vencido")
         raise HTTPException(status_code=503, detail="Inicio de sesión Google no configurado")
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Inicia sesión con Google")
