@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {onMounted, ref, watch, nextTick} from 'vue'
+import {onMounted, onUnmounted, ref, watch, nextTick} from 'vue'
 
 interface GoogleIdentity {
   accounts: {id: {
@@ -68,11 +68,19 @@ function loadScript(){
     script.async=true
     script.defer=true
     script.dataset.googleIdentity='1'
-    document.head.appendChild(script)
   }
   script.addEventListener('load',()=>{if(active)render()},{once:true})
-  script.addEventListener('error',()=>showError('El navegador bloqueó la carga de Google Identity Services.'),{once:true})
-  // If an existing script has already loaded, render immediately.
+  script.addEventListener('error',()=>{
+    script.remove()
+    showError('El navegador bloqueó la carga de Google Identity Services.')
+  },{once:true})
+  if(!existing)document.head.appendChild(script)
+  // Detect silent blocks as well, rather than showing an indefinite spinner.
+  window.setTimeout(()=>{
+    if(active&&state.value==='loading'&&!window.google?.accounts?.id){
+      showError('Google no respondió. Verifica que el navegador permita el acceso a accounts.google.com.')
+    }
+  },8000)
   if(window.google?.accounts?.id)render()
 }
 async function start(){
@@ -80,6 +88,7 @@ async function start(){
   if(active)loadScript()
 }
 onMounted(start)
+onUnmounted(()=>{active=false})
 watch(()=>props.clientId,()=>{currentId='';void start()},{flush:'post'})
 </script>
 

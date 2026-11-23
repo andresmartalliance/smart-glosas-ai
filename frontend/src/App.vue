@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import {computed, nextTick, onMounted, ref, watch} from 'vue'
 import ObjectionHistory from './ObjectionHistory.vue'
-
-declare global {interface Window {google?: {accounts: {id: {initialize:(opts:{client_id:string;callback:(reply:{credential:string})=>void})=>void;renderButton:(node:HTMLElement,opts:Record<string,string>)=>void}}}}}
+import GoogleAccess from './GoogleAccess.vue'
 
 type View = 'resumen'|'prevent'|'respond'|'reglas'|'historial'
 type Institute={id:string;name:string;roles:string[]}
@@ -26,34 +25,8 @@ const me=ref<Profile|null>(null)
 const tenantId=ref('')
 const geminiAvailable=ref(false)
 const googleClientId=ref('')
-const googleButton=ref<HTMLElement|null>(null)
 const creatingInstitution=ref(false)
 const newInstitutionName=ref('')
-let googleReadyForClient=''
-function renderGoogleSignIn(){
-  if(!googleClientId.value||!googleButton.value||!window.google?.accounts?.id)return
-  if(googleReadyForClient!==googleClientId.value){
-    window.google.accounts.id.initialize({client_id:googleClientId.value,
-      callback:({credential})=>{void signInWithGoogle(credential)}})
-    googleReadyForClient=googleClientId.value
-  }
-  googleButton.value.replaceChildren()
-  window.google.accounts.id.renderButton(googleButton.value,{
-    theme:'outline',size:'medium',shape:'pill',text:'signin_with',logo_alignment:'left'
-  })
-}
-watch([googleClientId,googleButton],renderGoogleSignIn)
-function loadGoogleSignIn(){
-  if(!googleClientId.value)return
-  if(window.google?.accounts?.id){renderGoogleSignIn();return}
-  const script=document.createElement('script')
-  script.src='https://accounts.google.com/gsi/client'
-  script.async=true
-  script.defer=true
-  script.onload=()=>renderGoogleSignIn()
-  script.onerror=()=>{error.value='No fue posible cargar el acceso con Google. Revisa la conexión.'}
-  document.head.appendChild(script)
-}
 async function signInWithGoogle(token:string){
   if(!token)return
   busy.value=true;error.value=''
@@ -250,9 +223,7 @@ onMounted(async()=>{
   try{
     const c=await fetch(API+'/api/v1/config').then(r=>r.json()) as {gemini_available:boolean;google_client_id?:string}
     geminiAvailable.value=Boolean(c.gemini_available)
-    googleClientId.value=c.google_client_id||''
-    await nextTick()
-    loadGoogleSignIn()
+    googleClientId.value=(c.google_client_id||'').trim()
   }catch{error.value='No se pudo conectar con Smart Glosas AI.'}
   ready.value=true
   window.addEventListener('message',(event:MessageEvent)=>{
@@ -445,7 +416,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
         <div><span class="access-number">02</span><div><strong>Responder objeciones</strong><small>Prepara contestaciones y subsanaciones sustentadas.</small></div></div>
       </div>
       <button v-if="previewAvailable" class="primary access-action" @click="preview=true;error='';view='resumen'">Abrir plataforma <span aria-hidden="true">→</span></button>
-      <div v-if="googleClientId&&!me" ref="googleButton" class="google-auth-slot"></div>
+      <GoogleAccess v-if="!me" :client-id="googleClientId" :loading="busy" @credential="signInWithGoogle"/>
       
       <div v-if="!ready||busy" class="muted access-status">Conectando con Smart…</div>
       <div v-if="error" role="alert" class="alert access-status">{{error}}</div>
@@ -470,13 +441,16 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
           <select v-if="me?.institutions.length" :value="tenantId" aria-label="Institución activa" @change="selectInstitution(($event.target as HTMLSelectElement).value)">
             <option v-for="t in me.institutions" :key="t.id" :value="t.id">{{t.name}}</option>
           </select>
-          <div v-if="preview&&googleClientId" ref="googleButton" class="google-auth-slot"></div>
-          <span v-if="preview&&!googleClientId" class="session-preview">Sin institución vinculada</span>
+          <GoogleAccess v-if="preview&&!me" :client-id="googleClientId" :loading="busy" @credential="signInWithGoogle"/>
           
           <span v-if="me?.email" class="session-user">{{me.email}}</span>
         </div>
       </header>
       <div class="page-content">
+        <div v-if="preview&&!me" class="google-access-intro">
+          <div><strong>Acceso corporativo</strong><p>Ingresa con Google para administrar hospitales, importar CSV y trabajar con Clara.</p></div>
+          <span>Cuenta institucional</span>
+        </div>
         <div v-if="error" role="alert" class="alert"><b>Atención</b> {{error}}</div>
         <div v-if="notification" role="status" class="notice">{{notification}}</div>
         

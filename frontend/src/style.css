@@ -148,3 +148,17 @@
 .hospital-admin-item strong{font-size:13px;color:#234360}
 .hospital-admin-item small{font-size:11px;color:#8193a6}
 @media(max-width:720px){.institution-form{flex-direction:column;align-items:stretch}.institution-form label,.institution-form button{width:100%}.hospital-admin-item{flex-direction:column;align-items:start}}
+
+
+/* Corporate sign-in must be visible, not a silent loading placeholder. */
+.google-access{min-width:260px;display:grid;gap:6px;justify-items:center}
+.google-access-button{display:flex;min-height:40px;align-items:center;justify-content:center}
+.google-access-button.inactive{min-height:0}
+.google-access-status{font-size:11px;color:#6c8199;text-align:center}
+.google-access-warning{max-width:300px;padding:10px 12px;border-radius:10px;background:#fff4ef;color:#98533a;font-size:11px;line-height:1.5}
+.google-access-retry{margin-left:6px;padding:3px 7px;border:1px solid #d6a391;background:#fff;border-radius:6px;font-weight:650;font-size:11px;color:#88442f}
+.google-access-intro{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap;border:1px solid #deebf6;background:#f5faff;border-radius:14px;padding:16px 20px;margin-bottom:23px}
+.google-access-intro strong{font-size:13px;color:#204c78}
+.google-access-intro p{font-size:12px;color:#597995;margin-top:5px}
+.google-access-intro span{white-space:nowrap;color:#7392ae;font-size:11px}
+@media(max-width:820px){.topbar{flex-wrap:wrap}.session-area{justify-content:flex-start;width:100%}.google-access{min-width:0}}
