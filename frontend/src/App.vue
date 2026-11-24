@@ -70,7 +70,7 @@ const canManageData=computed(()=>me.value?.institutions.find(t=>t.id===tenantId.
 const institution=computed(()=>me.value?.institutions.find(t=>t.id===tenantId.value))
 const nav:{id:View;label:string;num:string}[]=[
   {id:'resumen',label:'Inicio',num:'01'},
-  {id:'prevent',label:'Prevenir glosas',num:'02'},
+  {id:'prevent',label:'Auditar glosas',num:'02'},
   {id:'respond',label:'Responder glosas',num:'03'},
   {id:'historial',label:'Seguimiento',num:'04'},
   {id:'reglas',label:'Configuración',num:'05'}
@@ -293,7 +293,7 @@ async function runIndividual(phase:'PREVENT'|'RESPOND'){
     }else{
       const result=await request<{analyses:Analysis[]}>('/api/v1/analyses/prevent','POST',payload)
       recentResults.value=result.analyses
-      notification.value='Análisis preventivo registrado.'
+      notification.value='Análisis de auditoría registrado.'
     }
     await loadWorkspace()
   }catch(e){error.value=message(e)}finally{busy.value=false}
@@ -439,7 +439,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
           <span class="nav-number">{{item.num}}</span>{{item.label}}
         </button>
       </nav>
-      <div class="sidebar-bottom"><span>Smart Glosas AI</span><small>Prevención y respuestas</small></div>
+      <div class="sidebar-bottom"><span>Smart Glosas AI</span><small>Auditoría y respuestas</small></div>
     </aside>
     <main class="main">
       <header class="topbar"><div><span class="top-context">SMART / INTELIGENCIA FINANCIERA</span><h1>{{nav.find(n=>n.id===view)?.label}}</h1></div>
@@ -473,16 +473,16 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
         </section>
         <template v-else>
           <section v-if="view==='resumen'">
-            <div class="hero"><div><span class="eyebrow">INTELIGENCIA DE CUENTAS MÉDICAS</span><h2>De la prevención a la respuesta.</h2><p>Clara analiza cuentas antes de radicar y apoya la contestación de glosas y devoluciones. Cada evaluación conserva sus reglas y evidencias.</p></div><div class="hero-icon"><span>AI</span></div></div>
+            <div class="hero"><div><span class="eyebrow">INTELIGENCIA DE CUENTAS MÉDICAS</span><h2>De la auditoría a la respuesta.</h2><p>Clara apoya la auditoría de cuentas antes de radicar y la contestación de glosas y devoluciones. Cada evaluación conserva sus reglas y evidencias.</p></div><div class="hero-icon"><span>AI</span></div></div>
             <div class="feature-grid">
-              <button class="feature" @click="view='prevent'"><span class="feature-icon">01</span><strong>Prevenir glosas</strong><p>Revisión previa a la radicación desde Armado de Cuentas o archivos de otras IPS.</p><span class="feature-action">Abrir análisis <span>→</span></span></button>
+              <button class="feature" @click="view='prevent'"><span class="feature-icon">01</span><strong>Auditar glosas</strong><p>Revisión previa a la radicación desde Armado de Cuentas o archivos de otras IPS.</p><span class="feature-action">Abrir análisis <span>→</span></span></button>
               <button class="feature" @click="view='respond'"><span class="feature-icon">02</span><strong>Responder glosas</strong><p>Clasificación, evidencia, subsanación y borradores controlados frente a objeciones.</p><span class="feature-action">Abrir respuestas <span>→</span></span></button>
             </div>
-            <div class="metrics"><div><small>Análisis registrados</small><strong>{{preview?"—":records.length}}</strong></div><div><small>Preventivos</small><strong>{{preview?'—':records.filter(r=>r.phase==='PREVENT').length}}</strong></div><div><small>De respuesta</small><strong>{{preview?'—':records.filter(r=>r.phase==='RESPOND').length}}</strong></div><div><small>Reglas activas</small><strong>{{preview?"—":rules.length}}</strong></div></div>
+            <div class="metrics"><div><small>Análisis registrados</small><strong>{{preview?"—":records.length}}</strong></div><div><small>Auditoría de cuentas</small><strong>{{preview?'—':records.filter(r=>r.phase==='PREVENT').length}}</strong></div><div><small>De respuesta</small><strong>{{preview?'—':records.filter(r=>r.phase==='RESPOND').length}}</strong></div><div><small>Reglas activas</small><strong>{{preview?"—":rules.length}}</strong></div></div>
             <p class="muted footnote">{{preview?'Los indicadores se actualizarán cuando la institución comience a procesar cuentas.':'Los indicadores corresponden a los últimos 100 análisis de esta institución. No representan dinero recuperado ni probabilidad estadística.'}}</p>
           </section>
           <section v-else-if="view==='prevent'||view==='respond'">
-            <div class="section-intro"><div><span class="eyebrow">{{view==='prevent'?'ANTES DE RADICAR':'DESPUÉS DE LA OBJECIÓN'}}</span><h2>{{view==='prevent'?'Análisis preventivo de cuentas':'Análisis de glosas y devoluciones'}}</h2><p>{{view==='prevent'?'Verifica riesgos con la información disponible. Si falta documentación, el resultado lo indica.':'Analiza causales y evidencia. Las contestaciones requieren revisión y aprobación institucional.'}}</p></div></div>
+            <div class="section-intro"><div><span class="eyebrow">{{view==='prevent'?'AUDITORÍA DE CUENTAS':'DESPUÉS DE LA OBJECIÓN'}}</span><h2>{{view==='prevent'?'Auditar glosas':'Análisis de glosas y devoluciones'}}</h2><p>{{view==='prevent'?'Verifica riesgos con la información disponible. Si falta documentación, el resultado lo indica.':'Analiza causales y evidencia. Las contestaciones requieren revisión y aprobación institucional.'}}</p></div></div>
             <ObjectionHistory v-if="view==='respond'" :history="objectionHistory" :loading="historyBusy" :triage-busy="triageBusy" @open="openObjection" @triage="triagePending"/>
             <p v-if="view==='respond'&&triageResult" class="notice">{{triageResult}}</p>
             <p v-if="view==='respond'&&triageError" role="alert" class="alert">{{triageError}}</p>
@@ -598,7 +598,7 @@ function statusText(s:string){return ({REVIEW_REQUIRED:'Revisión requerida',INS
             </div><div class="sheet" v-if="canWriteRules"><div class="panel-heading"><h3>Agregar o actualizar regla</h3></div>
               <div class="form-grid">
                 <label>Identificador<input v-model="newRule.rule_key" placeholder="familia.regla"/></label><label>Nombre<input v-model="newRule.name" placeholder="Descripción corta"/></label>
-                <label>Fase<select v-model="newRule.phase"><option value="BOTH">Ambas</option><option value="PREVENT">Prevención</option><option value="RESPOND">Respuesta</option></select></label>
+                <label>Fase<select v-model="newRule.phase"><option value="BOTH">Ambas</option><option value="PREVENT">Auditoría</option><option value="RESPOND">Respuesta</option></select></label>
                 <label>Categoría<input v-model="newRule.category" placeholder="Soportes, tarifas…"/></label>
                 <label>EPS <small>(opcional)</small><input v-model="newRule.payer" placeholder="Para una EPS específica"/></label>
                 <label>Modalidad <small>(opcional)</small><input v-model="newRule.modality" placeholder="Según contrato"/></label>

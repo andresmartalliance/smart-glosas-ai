@@ -27,12 +27,12 @@ const error=ref('')
 let messageSequence=0
 
 const screenTitle:Record<Screen,string>={
-  resumen:'Inicio',prevent:'Prevención',respond:'Respuesta',
+  resumen:'Inicio',prevent:'Auditar glosas',respond:'Respuesta',
   historial:'Seguimiento',reglas:'Configuración'
 }
 const intro:Record<Screen,string>={
   resumen:'Puedo ayudarte a interpretar el avance de las glosas y a elegir el siguiente paso.',
-  prevent:'Puedo orientarte sobre controles antes de radicar y soportes que debes verificar.',
+  prevent:'Puedo orientarte en la auditoría previa a radicar y los soportes que debes verificar.',
   respond:'Selecciona una glosa para revisar su estado o consultar el criterio de Clara.',
   historial:'Puedo ayudarte a entender los estados y priorizar los casos pendientes.',
   reglas:'Puedo orientarte sobre hospitales, reglas de validación y gestión de cargas.'
@@ -149,7 +149,7 @@ async function submit(value?:string){
           </div>
         </div>
         <div class="clara-actions">
-          <button type="button" @click="switchView('prevent')">Prevenir glosas</button>
+          <button type="button" @click="switchView('prevent')">Auditar glosas</button>
           <button type="button" @click="switchView('respond')">Responder glosas</button>
           <button type="button" @click="switchView('historial')">Seguimiento</button>
         </div>
@@ -170,7 +170,7 @@ async function submit(value?:string){
       <footer class="clara-panel-footer">
         <form @submit.prevent="submit()">
           <textarea v-model="question" rows="2" maxlength="700"
-            placeholder="Pregunta sobre glosas, prevención o seguimiento…"
+            placeholder="Pregunta sobre glosas, auditoría o seguimiento…"
             aria-label="Escribe una consulta para Clara"
             :disabled="pending||!hasInstitution||!geminiAvailable"
             @keydown.enter.exact.prevent="submit()"></textarea>
